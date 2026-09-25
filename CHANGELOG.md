@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.2.0-beta.1
+## 0.2.0
 
-Version de test (pré-release). Voir [docs/STATUS.md](docs/STATUS.md) pour ce qui reste à vérifier.
+Points encore à vérifier et prochaines étapes : [docs/STATUS.md](docs/STATUS.md).
 
 **Notion Companion for Editors** : le plugin prend désormais en charge Adobe Premiere Pro en plus de DaVinci Resolve.
 

@@ -5,7 +5,7 @@ module.exports = Object.freeze({
     // Single source of truth for the version: scripts/build.sh copies it into
     // every host manifest (Resolve manifest.xml / package.json, Premiere manifest.json).
     // A pre-release suffix ("-beta.1") is published as a GitHub pre-release; manifests get the numeric part.
-    PLUGIN_VERSION: '0.2.0-beta.1',
+    PLUGIN_VERSION: '0.2.0',
 
     // Notion API version documented at the time of writing (see README).
     NOTION_VERSION: '2026-03-11',

@@ -1,6 +1,6 @@
 # État du projet
 
-*Mis à jour le 25 septembre 2026 — version 0.2.0-beta.1.*
+*Mis à jour le 25 septembre 2026 — version 0.2.0.*
 
 Ce document sépare ce qui a été **vérifié en conditions réelles**, ce qui ne l'a été **que par des tests automatiques**, et ce qui **reste à tester**. Il sert aussi de liste des points à revoir ensemble (interface, comportements).
 
@@ -85,4 +85,10 @@ Au moment de la publication, les journaux ne montraient encore ni recherche ni a
 - Emplacement et libellé des actions (Ouvrir dans Notion, •••, ↻).
 - Écran vide « Aucune page associée ».
 - Nom affiché dans les menus : « Notion Companion for Editors » est long.
-- Pistes futures : plusieurs tokens / workspaces Notion, Google Drive, to-do modifiables.
+
+## Prochaines étapes prévues
+
+- **UI / UX** : passe de design à faire ensemble (voir les points ci-dessus).
+- **Plusieurs comptes / workspaces Notion** : plusieurs tokens, chaque association retient son compte.
+- **Google Drive** (et autres sources), avec plusieurs comptes.
+- To-do modifiables (écriture vers Notion).
