@@ -1,9 +1,0 @@
-{
-    "name": "notion-companion",
-    "productName": "Notion Companion",
-    "version": "0.1.0",
-    "description": "DaVinci Resolve Workflow Integration: shows the Notion page linked to the current Resolve project",
-    "main": "main.js",
-    "private": true,
-    "license": "UNLICENSED"
-}

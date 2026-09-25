@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Notion Companion for Editors — "N" + timeline playhead. Original artwork. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1E1840"/>
+      <stop offset="1" stop-color="#090912"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.22" r="0.85">
+      <stop offset="0" stop-color="#8B5CF6" stop-opacity="0.55"/>
+      <stop offset="0.6" stop-color="#6366F1" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#6366F1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="n" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#C4B5FD"/>
+      <stop offset="0.45" stop-color="#818CF8"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <linearGradient id="ph" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FDF4FF"/>
+      <stop offset="1" stop-color="#F0ABFC"/>
+    </linearGradient>
+    <linearGradient id="clipA" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#6366F1"/>
+    </linearGradient>
+    <linearGradient id="clipB" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#0891B2"/>
+    </linearGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <clipPath id="tile"><rect width="512" height="512" rx="116"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <rect width="512" height="512" fill="url(#glow)"/>
+
+    <!-- timeline tracks -->
+    <g opacity="0.95">
+      <rect x="70" y="372" width="150" height="30" rx="9" fill="url(#clipA)"/>
+      <rect x="232" y="372" width="96" height="30" rx="9" fill="url(#clipA)" opacity="0.75"/>
+      <rect x="340" y="372" width="112" height="30" rx="9" fill="url(#clipA)" opacity="0.55"/>
+      <rect x="70" y="414" width="96" height="30" rx="9" fill="url(#clipB)" opacity="0.7"/>
+      <rect x="178" y="414" width="176" height="30" rx="9" fill="url(#clipB)"/>
+      <rect x="366" y="414" width="86" height="30" rx="9" fill="url(#clipB)" opacity="0.6"/>
+    </g>
+
+    <!-- N (glow + stroke) -->
+    <path d="M150 326 V116 L352 326 V116" fill="none" stroke="url(#n)" stroke-width="60" stroke-linecap="round" stroke-linejoin="round" filter="url(#blur)" opacity="0.7"/>
+    <path d="M150 326 V116 L352 326 V116" fill="none" stroke="url(#n)" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- playhead -->
+    <rect x="286" y="96" width="20" height="366" rx="10" fill="#F0ABFC" filter="url(#blur)" opacity="0.75"/>
+    <rect x="291" y="96" width="10" height="366" rx="5" fill="url(#ph)"/>
+    <path d="M270 58 H322 V88 L296 114 L270 88 Z" fill="url(#ph)" stroke="#1E1840" stroke-width="6" stroke-linejoin="round"/>
+  </g>
+  <rect x="3" y="3" width="506" height="506" rx="113" fill="none" stroke="#A5B4FC" stroke-opacity="0.28" stroke-width="6"/>
+</svg>

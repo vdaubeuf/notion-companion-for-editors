@@ -1,5 +1,5 @@
-# Pushing a tag such as v0.1.0 builds the macOS and Windows installer archives
-# and publishes them as a GitHub Release.
+# Pushing a tag such as v0.2.0 builds the macOS and Windows installer archives
+# (Resolve + Premiere) and the Premiere .ccx, and publishes them as a GitHub Release.
 name: Release
 
 on:
@@ -17,10 +17,8 @@ jobs:
 
       - name: Check tag matches plugin version
         run: |
-          version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' plugin/package.json | head -1)
-          manifest=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' plugin/manifest.xml)
-          test "v$version" = "$GITHUB_REF_NAME" || { echo "plugin/package.json version ($version) != tag ($GITHUB_REF_NAME)"; exit 1; }
-          test "$version" = "$manifest" || { echo "manifest.xml version ($manifest) != $version"; exit 1; }
+          version=$(sed -n "s/.*PLUGIN_VERSION: *'\([^']*\)'.*/\1/p" core/constants.js | head -1)
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "core/constants.js version ($version) != tag ($GITHUB_REF_NAME)"; exit 1; }
 
       - name: Build installer archives
         run: ./scripts/package.sh
@@ -29,6 +27,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.zip \
-            --title "Notion Companion $GITHUB_REF_NAME" \
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.ccx \
+            --title "Notion Companion for Editors $GITHUB_REF_NAME" \
+            $(case "$GITHUB_REF_NAME" in *-*) echo --prerelease ;; esac) \
             --notes-file <(awk -v v="## ${GITHUB_REF_NAME#v}" 'index($0, v) == 1 { f = 1; next } /^## / { f = 0 } f' CHANGELOG.md)

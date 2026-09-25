@@ -8,6 +8,7 @@ if [ ! -x "$ELECTRON" ]; then
     echo "Electron introuvable : $ELECTRON (définissez ELECTRON=...)" >&2
     exit 1
 fi
+"$REPO_DIR/scripts/build.sh" > /dev/null
 # Chromium prints a few harmless internal log lines: hide them.
 "$ELECTRON" "$REPO_DIR/tests" 2>&1 | grep -v -E '^\[[0-9]+:[0-9]+/' || true
 exit "${PIPESTATUS[0]}"

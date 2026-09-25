@@ -1,0 +1,14 @@
+/* Premiere Pro (UXP) adjustments on top of core/ui/styles.css. */
+
+:root {
+    /* Premiere's dark panel background. */
+    --bg: #232323;
+    --bg-2: #282828;
+}
+
+html, body { width: 100%; }
+body { font-size: 12px; }
+
+/* Text glyph icons (see core/ui/icons.js). */
+.icon.glyph { font-size: 13px; }
+.icon-btn { width: 24px; height: 24px; }

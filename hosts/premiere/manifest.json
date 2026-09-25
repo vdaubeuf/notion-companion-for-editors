@@ -1,0 +1,33 @@
+{
+  "id": "com.saparenprod.notioncompanion",
+  "name": "Notion Companion for Editors",
+  "version": "0.2.0",
+  "main": "index.html",
+  "manifestVersion": 6,
+  "host": {
+    "app": "premierepro",
+    "minVersion": "25.6.0"
+  },
+  "entrypoints": [
+    {
+      "id": "notionCompanionPanel",
+      "type": "panel",
+      "label": { "default": "Notion Companion for Editors" },
+      "minimumSize": { "width": 260, "height": 240 },
+      "maximumSize": { "width": 2000, "height": 4000 },
+      "preferredDockedSize": { "width": 380, "height": 600 },
+      "preferredFloatingSize": { "width": 400, "height": 650 },
+      "icons": [
+        { "width": 23, "height": 23, "path": "icons/icon.png", "scale": [1, 2], "theme": ["all"], "species": ["pluginList"] }
+      ]
+    }
+  ],
+  "requiredPermissions": {
+    "network": { "domains": "all" },
+    "launchProcess": { "schemes": ["https", "http", "mailto", "notion"], "extensions": [] },
+    "localFileSystem": "plugin"
+  },
+  "icons": [
+    { "width": 23, "height": 23, "path": "icons/icon.png", "scale": [1, 2], "theme": ["all"], "species": ["pluginList"] }
+  ]
+}

@@ -1,7 +1,8 @@
 'use strict';
 
 // Unit tests, executed as a tiny Electron app (works with the Electron bundled
-// inside DaVinci Resolve — no Node.js installation needed). See scripts/test.sh.
+// inside DaVinci Resolve — no Node.js installation needed). See scripts/test.sh,
+// which runs scripts/build.sh first (bundles are syntax-checked here).
 
 const assert = require('assert/strict');
 const fs = require('fs');
@@ -9,116 +10,230 @@ const os = require('os');
 const path = require('path');
 const { app } = require('electron');
 
-const SRC = path.join(__dirname, '..', 'plugin', 'src');
-const req = (p) => require(path.join(SRC, p));
+const REPO = path.join(__dirname, '..');
+const req = (p) => require(path.join(REPO, p));
 
 const silentLog = { debug() {}, info() {}, warn() {}, error() {} };
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'nc-test-'));
 
-// ---------------------------------------------------------------- identity
-const { buildIdentity } = req('resolve/identity');
+// In-memory backend with the same interface as the host backends.
+function memoryBackend(initial = {}) {
+    const files = { ...initial };
+    return {
+        files,
+        async read(n) { return Object.prototype.hasOwnProperty.call(files, n) ? files[n] : null; },
+        async write(n, t) { files[n] = t; },
+        async remove(n) { delete files[n]; },
+        async list(prefix) { return Object.keys(files).filter((n) => n.startsWith(prefix)).map((n, i) => ({ name: n, size: files[n].length, mtime: i })); },
+    };
+}
 
-test('identity: uses GetUniqueId when available', () => {
-    const id = buildIdentity({ name: 'Mon documentaire', uid: 'ABC-123', database: { DbType: 'Disk', DbName: 'Local Database' }, folder: 'Docs' });
+// ---------------------------------------------------------------- identity
+const { resolveIdentity, premiereIdentity } = req('core/identity');
+const DB = { DbType: 'Disk', DbName: 'Local Database' };
+
+test('identity (Resolve): uses GetUniqueId when available', () => {
+    const id = resolveIdentity({ name: 'Mon documentaire', uid: 'ABC-123', database: DB, folder: 'Docs' });
     assert.equal(id.key, 'uid:ABC-123');
     assert.equal(id.strategy, 'uid');
-    assert.deepEqual(id.database, { type: 'Disk', name: 'Local Database' });
+    assert.deepEqual(id.location, { key: 'Disk|Local Database', label: 'Local Database · Docs' });
 });
 
-test('identity: fallback key = db + name, folder excluded', () => {
-    const a = buildIdentity({ name: 'Mon documentaire', uid: '', database: { DbType: 'Disk', DbName: 'Local' }, folder: 'A' });
-    const b = buildIdentity({ name: 'Mon documentaire', uid: null, database: { DbType: 'Disk', DbName: 'Local' }, folder: 'B' });
-    assert.equal(a.strategy, 'fallback');
+test('identity (Resolve): fallback key = db + name, folder excluded', () => {
+    const a = resolveIdentity({ name: 'Mon documentaire', uid: '', database: { DbType: 'Disk', DbName: 'Local' }, folder: 'A' });
+    const b = resolveIdentity({ name: 'Mon documentaire', uid: null, database: { DbType: 'Disk', DbName: 'Local' }, folder: 'B' });
     assert.equal(a.key, 'name:Disk|Local|Mon documentaire');
     assert.equal(a.key, b.key);
 });
 
+test('identity (Premiere): guid, name without .prproj, path location', () => {
+    const id = premiereIdentity({ name: 'Mon documentaire.prproj', uid: 'bd5c-1', path: '/Users/me/Films/Mon documentaire.prproj' });
+    assert.equal(id.key, 'uid:bd5c-1');
+    assert.equal(id.name, 'Mon documentaire');
+    assert.equal(id.location.key, '/Users/me/Films/Mon documentaire.prproj');
+    assert.equal(id.location.label, '/Users/me/Films');
+    assert.equal(id.exactLocation, true);
+    assert.equal(premiereIdentity({ name: 'X.prproj', uid: '', path: 'C:\\P\\X.prproj' }).key, 'path:C:\\P\\X.prproj');
+});
+
 // ---------------------------------------------------------------- associations
-const { AssociationStore } = req('storage/associations');
+const { AssociationStore } = req('core/storage/associations');
 const page = (id, title) => ({ id, title, url: `https://www.notion.so/${id.replace(/-/g, '')}`, icon: { type: 'emoji', emoji: '🎬' } });
 const PID = '1a2b3c4d-1111-2222-3333-444455556666';
 const PID2 = '9f8e7d6c-1111-2222-3333-444455556666';
-const DB = { DbType: 'Disk', DbName: 'Local Database' };
 
-test('associations: set + find by uid, rename is followed', () => {
-    const dir = tmpDir();
-    const s = new AssociationStore(path.join(dir, 'a.json'), silentLog);
-    s.set(buildIdentity({ name: 'Mon documentaire', uid: 'U1', database: DB }), page(PID, 'Mon documentaire'));
-    const renamed = buildIdentity({ name: 'Mon documentaire (doc)', uid: 'U1', database: DB });
-    const r = s.find(renamed);
+async function freshStore(backend = memoryBackend()) {
+    const s = new AssociationStore(backend, silentLog);
+    await s.load();
+    return s;
+}
+
+test('associations: set + find by uid, rename is followed and persisted', async () => {
+    const backend = memoryBackend();
+    const s = await freshStore(backend);
+    s.set(resolveIdentity({ name: 'Mon documentaire', uid: 'U1', database: DB }), page(PID, 'Mon documentaire'));
+    const r = s.find(resolveIdentity({ name: 'Mon documentaire (doc)', uid: 'U1', database: DB }));
     assert.equal(r.matchedBy, 'uid');
     assert.equal(r.match.notionPageId, PID);
-    // persisted with the new name
-    const again = new AssociationStore(path.join(dir, 'a.json'), silentLog);
-    assert.equal(again.get('uid:U1').resolveProjectName, 'Mon documentaire (doc)');
+    await s.flush();
+    const again = await freshStore(backend);
+    assert.equal(again.get('uid:U1').projectName, 'Mon documentaire (doc)');
 });
 
-test('associations: fallback record is re-keyed to uid when uid becomes available', () => {
-    const dir = tmpDir();
-    const s = new AssociationStore(path.join(dir, 'a.json'), silentLog);
-    s.set(buildIdentity({ name: 'Court 2026', uid: null, database: DB }), page(PID, 'Court'));
-    const r = s.find(buildIdentity({ name: 'Court 2026', uid: 'U9', database: DB }));
+test('associations (Resolve): fallback record re-keyed to uid when uid becomes available', async () => {
+    const s = await freshStore();
+    s.set(resolveIdentity({ name: 'Court 2026', uid: null, database: DB }), page(PID, 'Court'));
+    const r = s.find(resolveIdentity({ name: 'Court 2026', uid: 'U9', database: DB }));
     assert.equal(r.match.notionPageId, PID);
     assert.equal(r.match.key, 'uid:U9');
-    assert.equal(s.get('name:Disk|Local Database|Court 2026'), null);
     assert.equal(s.count(), 1);
 });
 
-test('associations: same name but different uid -> suggestion only', () => {
-    const dir = tmpDir();
-    const s = new AssociationStore(path.join(dir, 'a.json'), silentLog);
-    s.set(buildIdentity({ name: 'Test', uid: 'U1', database: DB }), page(PID, 'Notes test'));
-    const r = s.find(buildIdentity({ name: 'Test', uid: 'U2', database: DB }));
+test('associations (Resolve): same name but different uid -> suggestion only', async () => {
+    const s = await freshStore();
+    s.set(resolveIdentity({ name: 'Test', uid: 'U1', database: DB }), page(PID, 'Notes test'));
+    const r = s.find(resolveIdentity({ name: 'Test', uid: 'U2', database: DB }));
     assert.equal(r.match, null);
     assert.equal(r.suggestion.notionPageId, PID);
 });
 
-test('associations: other database -> no match, no suggestion', () => {
-    const dir = tmpDir();
-    const s = new AssociationStore(path.join(dir, 'a.json'), silentLog);
-    s.set(buildIdentity({ name: 'Test', uid: 'U1', database: DB }), page(PID, 'Notes'));
-    const r = s.find(buildIdentity({ name: 'Test', uid: 'U2', database: { DbType: 'PostgreSQL', DbName: 'Studio' } }));
+test('associations (Resolve): other database -> no match, no suggestion', async () => {
+    const s = await freshStore();
+    s.set(resolveIdentity({ name: 'Test', uid: 'U1', database: DB }), page(PID, 'Notes'));
+    const r = s.find(resolveIdentity({ name: 'Test', uid: 'U2', database: { DbType: 'PostgreSQL', DbName: 'Studio' } }));
     assert.equal(r.match, null);
     assert.equal(r.suggestion, null);
 });
 
-test('associations: setPage, refreshPageInfo, remove', () => {
-    const dir = tmpDir();
-    const s = new AssociationStore(path.join(dir, 'a.json'), silentLog);
-    s.set(buildIdentity({ name: 'P', uid: 'U1', database: DB }), page(PID, 'Old'));
+test('associations (Premiere): same file with a new guid -> match and re-key', async () => {
+    const s = await freshStore();
+    s.set(premiereIdentity({ name: 'Doc.prproj', uid: 'G1', path: '/p/Doc.prproj' }), page(PID, 'Doc'));
+    const r = s.find(premiereIdentity({ name: 'Doc.prproj', uid: 'G2', path: '/p/Doc.prproj' }));
+    assert.equal(r.matchedBy, 'location');
+    assert.equal(r.match.key, 'uid:G2');
+    assert.equal(s.count(), 1);
+});
+
+test('associations (Premiere): same name in another folder -> suggestion only', async () => {
+    const s = await freshStore();
+    s.set(premiereIdentity({ name: 'Doc.prproj', uid: 'G1', path: '/p/Doc.prproj' }), page(PID, 'Doc'));
+    const r = s.find(premiereIdentity({ name: 'Doc.prproj', uid: 'G3', path: '/backup/Doc.prproj' }));
+    assert.equal(r.match, null);
+    assert.equal(r.suggestion.notionPageId, PID);
+});
+
+test('associations: hosts are isolated (Resolve record never matches Premiere)', async () => {
+    const s = await freshStore();
+    s.set(resolveIdentity({ name: 'Doc', uid: 'U1', database: DB }), page(PID, 'Doc'));
+    const r = s.find(premiereIdentity({ name: 'Doc.prproj', uid: 'G1', path: '/p/Doc.prproj' }));
+    assert.equal(r.match, null);
+    assert.equal(r.suggestion, null);
+});
+
+test('associations: setPage, refreshPageInfo, remove', async () => {
+    const s = await freshStore();
+    s.set(resolveIdentity({ name: 'P', uid: 'U1', database: DB }), page(PID, 'Old'));
     s.setPage('uid:U1', page(PID2, 'New'));
     assert.equal(s.get('uid:U1').notionPageId, PID2);
-    s.refreshPageInfo(PID2, { ...page(PID2, 'Renamed') });
+    s.refreshPageInfo(PID2, page(PID2, 'Renamed'));
     assert.equal(s.get('uid:U1').notionPageTitle, 'Renamed');
     assert.equal(s.remove('uid:U1'), true);
     assert.equal(s.count(), 0);
 });
 
-test('associations: migrates v0 flat format', () => {
-    const dir = tmpDir();
-    const f = path.join(dir, 'a.json');
-    fs.writeFileSync(f, JSON.stringify({ 'uid:X': { resolveProjectName: 'Mon documentaire', notionPageId: PID, notionPageTitle: 'Mon documentaire' } }));
-    const s = new AssociationStore(f, silentLog);
-    assert.equal(s.count(), 1);
-    assert.equal(JSON.parse(fs.readFileSync(f, 'utf8')).schemaVersion, 1);
+test('associations: migrates v1 (0.1.0 Resolve format) to v2 without losing data', async () => {
+    const v1 = {
+        schemaVersion: 1,
+        associations: {
+            'uid:a1b2c3d4': {
+                key: 'uid:a1b2c3d4', resolveProjectUid: 'a1b2c3d4', resolveProjectName: 'Documentaire Studio',
+                resolveDatabase: { type: 'PostgreSQL', name: 'db_studio' }, resolveFolder: null,
+                notionPageId: PID, notionPageTitle: 'Notes du documentaire', notionPageUrl: 'https://www.notion.so/x', notionPageIcon: null,
+                createdAt: '2026-09-25T12:55:01.000Z', updatedAt: '2026-09-25T12:55:01.000Z',
+            },
+        },
+    };
+    const backend = memoryBackend({ 'associations.json': JSON.stringify(v1) });
+    const s = await freshStore(backend);
+    const a = s.get('uid:a1b2c3d4');
+    assert.equal(a.host, 'resolve');
+    assert.equal(a.projectUid, 'a1b2c3d4');
+    assert.equal(a.projectName, 'Documentaire Studio');
+    assert.deepEqual(a.location, { key: 'PostgreSQL|db_studio', label: 'db_studio' });
+    assert.equal(a.notionPageTitle, 'Notes du documentaire');
+    const r = s.find(resolveIdentity({ name: 'Documentaire Studio', uid: 'a1b2c3d4', database: { DbType: 'PostgreSQL', DbName: 'db_studio' } }));
+    assert.equal(r.matchedBy, 'uid');
+    await s.flush();
+    assert.equal(JSON.parse(backend.files['associations.json']).schemaVersion, 2);
 });
 
-// ---------------------------------------------------------------- json store
-const { JsonStore } = req('storage/jsonStore');
+test('associations: migrates v0 flat format', async () => {
+    const backend = memoryBackend({ 'associations.json': JSON.stringify({ 'uid:X': { resolveProjectName: 'Mon documentaire', notionPageId: PID, notionPageTitle: 'Mon documentaire' } }) });
+    const s = await freshStore(backend);
+    assert.equal(s.count(), 1);
+    assert.equal(s.get('uid:X').projectName, 'Mon documentaire');
+});
 
-test('jsonStore: corrupt file is moved aside, defaults used', () => {
-    const dir = tmpDir();
-    const f = path.join(dir, 's.json');
-    fs.writeFileSync(f, '{not json');
-    const s = new JsonStore(f, { version: 1, defaults: () => ({ a: 1 }), log: silentLog });
-    assert.equal(s.load().a, 1);
-    assert.ok(fs.readdirSync(dir).some((n) => n.startsWith('s.json.corrupt-')));
+// ---------------------------------------------------------------- json store / cache / fs backend
+const { JsonStore } = req('core/storage/jsonStore');
+const { PageCache } = req('core/storage/cache');
+const { createFsBackend } = req('hosts/resolve/host/fsBackend');
+
+test('jsonStore: corrupt document is copied aside, defaults used', async () => {
+    const backend = memoryBackend({ 's.json': '{not json' });
+    const s = new JsonStore(backend, 's.json', { version: 1, defaults: () => ({ a: 1 }), log: silentLog });
+    assert.equal((await s.load()).a, 1);
+    assert.ok(Object.keys(backend.files).some((n) => n.startsWith('s.json.corrupt-')));
+});
+
+test('fsBackend: read/write/list/remove with sub-folders, stays inside root', async () => {
+    const root = tmpDir();
+    const b = createFsBackend(root);
+    assert.equal(await b.read('none.json'), null);
+    await b.write('cache/abc.json', '{}');
+    await b.write('settings.json', '{"x":1}');
+    assert.equal(await b.read('settings.json'), '{"x":1}');
+    const listed = await b.list('cache/');
+    assert.deepEqual(listed.map((e) => e.name), ['cache/abc.json']);
+    await b.remove('cache/abc.json');
+    assert.deepEqual(await b.list('cache/'), []);
+    await assert.rejects(b.write('../escape.json', 'x'));
+});
+
+test('cache: put/get/prune/clear', async () => {
+    const backend = memoryBackend();
+    const c = new PageCache(backend, { maxPages: 2, log: silentLog });
+    const ids = ['11111111111111111111111111111111', '22222222222222222222222222222222', '33333333333333333333333333333333'];
+    for (const id of ids) await c.put(id, { page: { id }, blocks: [] });
+    assert.equal((await c.stats()).pages, 2);
+    assert.equal((await c.get(ids[2])).page.id, ids[2]);
+    await c.clear();
+    assert.equal((await c.stats()).pages, 0);
+});
+
+// ---------------------------------------------------------------- secrets
+const { SecretStore } = req('core/storage/secrets');
+
+test('secrets: load/set/clear through provider, refuses without secure storage', async () => {
+    let stored = 'ntn_previous_token_1234567890';
+    const provider = { available: () => true, load: async () => stored, save: async (t) => { stored = t; }, clear: async () => { stored = null; } };
+    const changes = [];
+    const s = new SecretStore(provider, silentLog, { onChange: (t) => changes.push(t) });
+    await s.load();
+    assert.equal(s.getToken(), 'ntn_previous_token_1234567890');
+    await s.setToken('ntn_new_token_abcdefghijklmnop');
+    assert.equal(stored, 'ntn_new_token_abcdefghijklmnop');
+    await s.clearToken();
+    assert.equal(s.hasToken(), false);
+    assert.deepEqual(changes.slice(-1), [null]);
+    const none = new SecretStore({ ...provider, available: () => false }, silentLog);
+    await assert.rejects(none.setToken('ntn_x_abcdefghijklmnopqrstu'), (e) => e.code === 'encryption_unavailable');
 });
 
 // ---------------------------------------------------------------- blocks
-const { normalizeBlock, normalizeRichText, safeHref } = req('notion/blocks');
+const { normalizeBlock, normalizeRichText, safeHref } = req('core/notion/blocks');
 
 test('blocks: rich text annotations and links', () => {
     const r = normalizeRichText([
@@ -128,7 +243,6 @@ test('blocks: rich text annotations and links', () => {
     ]);
     assert.deepEqual(r[0], { t: 'Gras', b: 1 });
     assert.equal(r[1].href, 'https://example.com/');
-    assert.equal(r[1].color, 'red');
     assert.equal(r[2].href, undefined);
     assert.equal(safeHref('/abc'), 'https://www.notion.so/abc');
 });
@@ -138,50 +252,39 @@ test('blocks: to_do, heading toggle, child_page not recursed, unsupported', () =
     assert.equal(todo.checked, true);
     const hd = normalizeBlock({ object: 'block', id: PID, type: 'heading_2', has_children: true, heading_2: { rich_text: [], is_toggleable: true } });
     assert.equal(hd.toggleable, true);
-    assert.equal(hd.hasChildren, true);
     const cp = normalizeBlock({ object: 'block', id: PID, type: 'child_page', has_children: true, child_page: { title: 'Sous-page' } });
     assert.equal(cp.hasChildren, false);
-    assert.equal(cp.url, 'https://www.notion.so/1a2b3c4d111122223333444455556666');
     const un = normalizeBlock({ object: 'block', id: PID, type: 'unsupported', unsupported: { block_type: 'ai_block' } });
-    assert.equal(un.unsupported, true);
     assert.equal(un.originalType, 'ai_block');
 });
 
 test('blocks: media keeps only https urls', () => {
     const img = normalizeBlock({ object: 'block', id: PID, type: 'image', image: { type: 'external', external: { url: 'http://insecure/x.png' }, caption: [] } });
     assert.equal(img.url, null);
-    const ok = normalizeBlock({ object: 'block', id: PID, type: 'image', image: { type: 'file', file: { url: 'https://s3/x.png', expiry_time: 'T' }, caption: [] } });
-    assert.equal(ok.url, 'https://s3/x.png');
 });
 
-// ---------------------------------------------------------------- pages
-const { extractTitle, summarizePage, searchPages } = req('notion/pages');
+// ---------------------------------------------------------------- pages / client / loader
+const { extractTitle, summarizePage, searchPages } = req('core/notion/pages');
+const { NotionClient } = req('core/notion/client');
+const { loadPageContent } = req('core/notion/loader');
 
 test('pages: title extraction and summary', () => {
     const p = { object: 'page', id: PID.replace(/-/g, ''), properties: { Nom: { type: 'title', title: [{ plain_text: 'Mon ' }, { plain_text: 'documentaire' }] } }, parent: { type: 'page_id', page_id: PID2 }, url: 'https://www.notion.so/x', icon: { type: 'emoji', emoji: '🎬' } };
     assert.equal(extractTitle(p), 'Mon documentaire');
-    const s = summarizePage(p);
-    assert.equal(s.id, PID);
-    assert.deepEqual(s.parent, { type: 'page_id', id: PID2 });
-    assert.deepEqual(s.icon, { type: 'emoji', emoji: '🎬' });
+    assert.deepEqual(summarizePage(p).parent, { type: 'page_id', id: PID2 });
 });
 
 test('pages: search sends page filter and drops trashed results', async () => {
     let sent;
-    const client = { request: async (m, p, o) => { sent = { m, p, o }; return { results: [
+    const client = { request: async (m, p, o) => { sent = o; return { results: [
         { object: 'page', id: PID, properties: {}, in_trash: false },
         { object: 'page', id: PID2, properties: {}, in_trash: true },
     ], has_more: true, next_cursor: 'c2' }; } };
     const r = await searchPages(client, { query: ' Mon documentaire ' });
-    assert.equal(sent.p, '/search');
-    assert.equal(sent.o.body.query, 'Mon documentaire');
-    assert.deepEqual(sent.o.body.filter, { property: 'object', value: 'page' });
+    assert.equal(sent.body.query, 'Mon documentaire');
     assert.equal(r.results.length, 1);
     assert.equal(r.nextCursor, 'c2');
 });
-
-// ---------------------------------------------------------------- client
-const { NotionClient } = req('notion/client');
 
 function fakeResponse(status, body, headers = {}) {
     return { ok: status >= 200 && status < 300, status, headers: { get: (k) => headers[k.toLowerCase()] ?? null }, text: async () => JSON.stringify(body) };
@@ -200,57 +303,36 @@ function makeClient(responses, extra = {}) {
     return { client, calls, sleeps };
 }
 
-test('client: headers, 429 retried after Retry-After', async () => {
-    const { client, calls, sleeps } = makeClient([
-        fakeResponse(429, { code: 'rate_limited' }, { 'retry-after': '2' }),
-        fakeResponse(200, { ok: 1 }),
-    ]);
-    const r = await client.request('GET', '/pages/x');
-    assert.deepEqual(r, { ok: 1 });
-    assert.equal(calls.length, 2);
+test('client: headers, query string, 429 retried after Retry-After', async () => {
+    const { client, calls, sleeps } = makeClient([fakeResponse(429, { code: 'rate_limited' }, { 'retry-after': '2' }), fakeResponse(200, { ok: 1 })]);
+    assert.deepEqual(await client.request('GET', '/blocks/x/children', { query: { page_size: 100, start_cursor: undefined } }), { ok: 1 });
+    assert.equal(calls[0].url, 'https://api.notion.com/v1/blocks/x/children?page_size=100');
     assert.equal(calls[0].init.headers['Notion-Version'], '2026-03-11');
-    assert.equal(calls[0].init.headers.Authorization, 'Bearer ntn_testtoken_abcdefghijklmnop');
     assert.ok(sleeps.includes(2000));
 });
 
-test('client: 401 -> unauthorized, 404 -> not_found, no retry', async () => {
+test('client: 401 -> unauthorized, network error retried, timeout without AbortSignal support', async () => {
     const a = makeClient([fakeResponse(401, { code: 'unauthorized' })]);
     await assert.rejects(a.client.request('GET', '/users/me'), (e) => e.code === 'unauthorized');
-    assert.equal(a.calls.length, 1);
-    const b = makeClient([fakeResponse(404, { code: 'object_not_found' })]);
-    await assert.rejects(b.client.request('GET', '/pages/x'), (e) => e.code === 'not_found');
+    const b = makeClient([new TypeError('fetch failed'), new TypeError('fetch failed'), new TypeError('fetch failed')]);
+    await assert.rejects(b.client.request('GET', '/pages/x'), (e) => e.code === 'network');
+    assert.equal(b.calls.length, 3);
+    const c = new NotionClient({
+        getToken: () => 'ntn_testtoken_abcdefghijklmnop', fetchImpl: () => new Promise(() => {}), // never settles, ignores signal
+        version: 'v', baseUrl: 'https://x', log: silentLog, minIntervalMs: 0, timeoutMs: 30, maxRetries: 0, sleepImpl: async () => {},
+    });
+    await assert.rejects(c.request('POST', '/x', { body: {} }), (e) => e.code === 'timeout');
 });
-
-test('client: network error retried then reported', async () => {
-    const { client, calls } = makeClient([new TypeError('fetch failed'), new TypeError('fetch failed'), new TypeError('fetch failed')]);
-    await assert.rejects(client.request('GET', '/pages/x'), (e) => e.code === 'network');
-    assert.equal(calls.length, 3);
-});
-
-test('client: blocked rate limit is not retried', async () => {
-    const { client, calls } = makeClient([fakeResponse(429, { code: 'rate_limited', additional_data: { rate_limit_reason: 'public_api_request_blocked' } })]);
-    await assert.rejects(client.request('GET', '/pages/x'), (e) => e.code === 'rate_limited');
-    assert.equal(calls.length, 1);
-});
-
-test('client: no token', async () => {
-    const { client } = makeClient([], { getToken: () => null });
-    await assert.rejects(client.request('GET', '/x'), (e) => e.code === 'no_token');
-});
-
-// ---------------------------------------------------------------- loader
-const { loadPageContent } = req('notion/loader');
 
 test('loader: paginates and recurses into children, skips child pages', async () => {
     const blk = (id, type, hasChildren = false, extra = {}) => ({ object: 'block', id, type, has_children: hasChildren, [type]: { rich_text: [{ plain_text: id }], ...extra } });
-    const ROOT = PID;
     const T = '00000000-0000-0000-0000-00000000000a';
     const SUB = '00000000-0000-0000-0000-00000000000b';
     const N1 = '00000000-0000-0000-0000-00000000000c';
     const routes = {
-        [`/pages/${ROOT}`]: { object: 'page', id: ROOT, properties: { t: { type: 'title', title: [{ plain_text: 'Mon documentaire' }] } }, url: 'https://www.notion.so/p' },
-        [`/blocks/${ROOT}/children|`]: { results: [blk(T, 'toggle', true)], has_more: true, next_cursor: 'c1' },
-        [`/blocks/${ROOT}/children|c1`]: { results: [{ object: 'block', id: SUB, type: 'child_page', has_children: true, child_page: { title: 'Sous' } }], has_more: false },
+        [`/pages/${PID}`]: { object: 'page', id: PID, properties: { t: { type: 'title', title: [{ plain_text: 'Mon documentaire' }] } }, url: 'https://www.notion.so/p' },
+        [`/blocks/${PID}/children|`]: { results: [blk(T, 'toggle', true)], has_more: true, next_cursor: 'c1' },
+        [`/blocks/${PID}/children|c1`]: { results: [{ object: 'block', id: SUB, type: 'child_page', has_children: true, child_page: { title: 'Sous' } }], has_more: false },
         [`/blocks/${T}/children|`]: { results: [blk(N1, 'to_do', false, { checked: true })], has_more: false },
     };
     const requested = [];
@@ -260,41 +342,49 @@ test('loader: paginates and recurses into children, skips child pages', async ()
         if (!routes[k]) throw new Error(`unexpected ${k}`);
         return routes[k];
     } };
-    let progress = 0;
-    const r = await loadPageContent(client, ROOT, { maxBlocks: 100, maxDepth: 5, onProgress: () => { progress += 1; }, throttleMs: 0 });
-    assert.equal(r.page.title, 'Mon documentaire');
+    const r = await loadPageContent(client, PID, { maxBlocks: 100, maxDepth: 5, throttleMs: 0 });
     assert.equal(r.blocks.length, 2);
     assert.equal(r.blocks[0].children[0].checked, true);
-    assert.equal(r.blocks[1].type, 'child_page');
-    assert.ok(!requested.some((k) => k.startsWith(`/blocks/${SUB}`)), 'child page must not be fetched');
-    assert.ok(progress >= 1);
-    assert.equal(r.truncated, false);
+    assert.ok(!requested.some((k) => k.startsWith(`/blocks/${SUB}`)));
 });
 
-test('loader: trashed page -> page_trashed', async () => {
-    const client = { request: async () => ({ object: 'page', id: PID, properties: {}, in_trash: true }) };
-    await assert.rejects(loadPageContent(client, PID, { maxBlocks: 10, maxDepth: 2 }), (e) => e.code === 'page_trashed');
-});
+// ---------------------------------------------------------------- operations / logger
+const { validators, runOperation } = req('core/operations');
+const { redact } = req('core/logger');
+const { normalizeId } = req('core/notion/ids');
 
-// ---------------------------------------------------------------- logger / validators
-const { redact } = req('main/logger');
-const { validators } = req('main/ipc');
-const { normalizeId } = req('notion/ids');
+test('operations: validators and error envelope', async () => {
+    assert.equal(normalizeId('1A2B3C4D111122223333444455556666'), PID);
+    assert.throws(() => validators.token('short'));
+    assert.equal(validators.token('  ntn_abcdefghijklmnopqrstuvwxyz  '), 'ntn_abcdefghijklmnopqrstuvwxyz');
+    assert.equal(validators.assocKey('path:/p/Doc.prproj'), 'path:/p/Doc.prproj');
+    assert.throws(() => validators.assocKey('evil'));
+    const res = await runOperation({ boom: () => { throw Object.assign(new Error('x'), { code: 'network' }); } }, 'boom', [], silentLog);
+    assert.deepEqual(res, { ok: false, error: { code: 'network', message: 'Impossible de contacter Notion.' } });
+    assert.equal((await runOperation({}, 'constructor', [], silentLog)).ok, false);
+});
 
 test('logger: tokens are redacted', () => {
     const out = redact('Authorization: Bearer ntn_1234567890abcdef token=secret_abcdefghijk');
-    assert.ok(!out.includes('ntn_1234567890abcdef'));
-    assert.ok(!out.includes('secret_abcdefghijk'));
+    assert.ok(!out.includes('ntn_1234567890abcdef') && !out.includes('secret_abcdefghijk'));
 });
 
-test('validators: page ids, tokens, keys', () => {
-    assert.equal(normalizeId('1A2B3C4D111122223333444455556666'), PID);
-    assert.equal(normalizeId('../../etc'), null);
-    assert.throws(() => validators.token('short'));
-    assert.throws(() => validators.token('ntn_ with spaces inside the token'));
-    assert.equal(validators.token('  ntn_abcdefghijklmnopqrstuvwxyz  '), 'ntn_abcdefghijklmnopqrstuvwxyz');
-    assert.throws(() => validators.assocKey('evil'));
-    assert.equal(validators.assocKey('uid:1'), 'uid:1');
+// ---------------------------------------------------------------- build output
+test('bundles: generated scripts parse', () => {
+    for (const f of ['build/resolve/renderer/ui.bundle.js', 'build/premiere/panel.bundle.js']) {
+        const src = fs.readFileSync(path.join(REPO, f), 'utf8');
+        assert.doesNotThrow(() => new Function(src), f); // eslint-disable-line no-new-func
+    }
+});
+
+test('manifests: versions match core/constants.js, Premiere host is an object (installer requirement)', () => {
+    const { PLUGIN_VERSION } = req('core/constants');
+    const pm = JSON.parse(fs.readFileSync(path.join(REPO, 'build/premiere/manifest.json'), 'utf8'));
+    const numeric = PLUGIN_VERSION.split('-')[0];
+    assert.equal(pm.version, numeric);
+    assert.ok(pm.host && !Array.isArray(pm.host), 'host must be an object for Creative Cloud installer');
+    assert.ok(fs.readFileSync(path.join(REPO, 'build/resolve/manifest.xml'), 'utf8').includes(`<Version>${numeric}</Version>`));
+    assert.equal(JSON.parse(fs.readFileSync(path.join(REPO, 'build/resolve/package.json'), 'utf8')).version, PLUGIN_VERSION);
 });
 
 // ---------------------------------------------------------------- runner

@@ -1,53 +1,62 @@
 #!/bin/bash
-# Builds the downloadable installer archives:
-#   dist/NotionCompanion-<version>-macOS.zip
-#   dist/NotionCompanion-<version>-Windows.zip
-# Each archive contains the plugin, the install/uninstall scripts for its
-# platform, double-clickable launchers and the README.
-# WorkflowIntegration.node is NOT included: the installers copy it from the
-# local DaVinci Resolve installation.
+# Builds the downloadable release files (run by the GitHub release workflow):
+#   dist/NotionCompanionForEditors-<v>-macOS.zip     Resolve + Premiere installers for macOS
+#   dist/NotionCompanionForEditors-<v>-Windows.zip   Resolve + Premiere installers for Windows
+#   dist/NotionCompanionForEditors-<v>_premierepro.ccx  Premiere panel alone (macOS + Windows, double-click)
+# WorkflowIntegration.node is NOT included: the Resolve installers copy it from
+# the local DaVinci Resolve installation.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$REPO_DIR/plugin/package.json" | head -1)"
+"$REPO_DIR/scripts/build.sh"
+VERSION="$(sed -n "s/.*PLUGIN_VERSION: *'\([^']*\)'.*/\1/p" "$REPO_DIR/core/constants.js" | head -1)"
 DIST="$REPO_DIR/dist"
-NAME="NotionCompanion-$VERSION"
+NAME="NotionCompanionForEditors-$VERSION"
+CCX="${NAME}_premierepro.ccx"
 
 rm -rf "$DIST"
 mkdir -p "$DIST"
 
-stage() {
+# ---------- Premiere .ccx (a zip of the UXP plugin folder, no signature needed)
+( cd "$REPO_DIR/build/premiere" && zip -qr -X "$DIST/$CCX" . )
+
+stage() { # <dir>
     local dir="$1"
-    mkdir -p "$dir/scripts"
-    ( cd "$REPO_DIR" && tar --exclude='.DS_Store' --exclude='WorkflowIntegration.node' -cf - plugin ) | ( cd "$dir" && tar -xf - )
+    mkdir -p "$dir/resolve/plugin" "$dir/premiere" "$dir/scripts"
+    ( cd "$REPO_DIR/build/resolve" && tar --exclude='.DS_Store' --exclude='WorkflowIntegration.node' -cf - . ) | ( cd "$dir/resolve/plugin" && tar -xf - )
+    cp "$DIST/$CCX" "$dir/premiere/"
     cp "$REPO_DIR/README.md" "$dir/"
+    mkdir -p "$dir/assets" && cp "$REPO_DIR/assets/icon-256.png" "$dir/assets/"
 }
 
 # ---------- macOS
 MAC="$DIST/stage-mac/$NAME"
 stage "$MAC"
-cp "$REPO_DIR/scripts/install.sh" "$REPO_DIR/scripts/uninstall.sh" "$MAC/scripts/"
-cat > "$MAC/Installer Notion Companion.command" <<'EOF'
-#!/bin/bash
-# Double-click to install (first time: right-click > Open, see README).
-cd "$(dirname "$0")" && ./scripts/install.sh
-EOF
-cat > "$MAC/Desinstaller Notion Companion.command" <<'EOF'
-#!/bin/bash
-# Double-click to uninstall (keeps your associations; see README for --purge).
-cd "$(dirname "$0")" && ./scripts/uninstall.sh
-EOF
-chmod +x "$MAC"/*.command "$MAC"/scripts/*.sh
+cp "$REPO_DIR/scripts/"{install.sh,uninstall.sh,premiere-install.sh,premiere-uninstall.sh,build.sh} "$MAC/scripts/"
+launcher() { # <file> <script> [args]
+    printf '#!/bin/bash\n# Double-click (first time: right-click > Open, see README).\ncd "$(dirname "$0")" && ./scripts/%s %s\n' "$2" "${3:-}" > "$1"
+    chmod +x "$1"
+}
+launcher "$MAC/Installer pour DaVinci Resolve.command" install.sh
+launcher "$MAC/Desinstaller de DaVinci Resolve.command" uninstall.sh
+launcher "$MAC/Installer pour Premiere Pro.command" premiere-install.sh
+launcher "$MAC/Desinstaller de Premiere Pro.command" premiere-uninstall.sh
+chmod +x "$MAC"/scripts/*.sh
 ( cd "$DIST/stage-mac" && zip -qry -X "$DIST/$NAME-macOS.zip" "$NAME" )
 
 # ---------- Windows
 WIN="$DIST/stage-win/$NAME"
 stage "$WIN"
-cp "$REPO_DIR/scripts/install.ps1" "$REPO_DIR/scripts/uninstall.ps1" "$WIN/scripts/"
-printf '@echo off\r\nrem Double-click to install Notion Companion into DaVinci Resolve.\r\npowershell -NoProfile -ExecutionPolicy Bypass -File "%%~dp0scripts\\install.ps1"\r\n' > "$WIN/Installer Notion Companion.cmd"
-printf '@echo off\r\nrem Double-click to uninstall (keeps your associations; see README for -Purge).\r\npowershell -NoProfile -ExecutionPolicy Bypass -File "%%~dp0scripts\\uninstall.ps1"\r\n' > "$WIN/Desinstaller Notion Companion.cmd"
+cp "$REPO_DIR/scripts/"{install.ps1,uninstall.ps1,premiere-install.ps1,premiere-uninstall.ps1} "$WIN/scripts/"
+cmd() { # <file> <script>
+    printf '@echo off\r\nrem Double-click to run %s\r\npowershell -NoProfile -ExecutionPolicy Bypass -File "%%~dp0scripts\\%s"\r\n' "$2" "$2" > "$1"
+}
+cmd "$WIN/Installer pour DaVinci Resolve.cmd" install.ps1
+cmd "$WIN/Desinstaller de DaVinci Resolve.cmd" uninstall.ps1
+cmd "$WIN/Installer pour Premiere Pro.cmd" premiere-install.ps1
+cmd "$WIN/Desinstaller de Premiere Pro.cmd" premiere-uninstall.ps1
 ( cd "$DIST/stage-win" && zip -qr -X "$DIST/$NAME-Windows.zip" "$NAME" )
 
 rm -rf "$DIST/stage-mac" "$DIST/stage-win"
-echo "Archives créées :"
-ls -1 "$DIST"/*.zip
+echo "Fichiers de release :"
+ls -1 "$DIST"

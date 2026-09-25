@@ -1,7 +1,7 @@
 #!/bin/bash
-# Installs Notion Companion as a DaVinci Resolve Workflow Integration (macOS).
+# Installs Notion Companion for Editors as a DaVinci Resolve Workflow Integration (macOS).
 #
-# - copies ./plugin to "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Workflow Integration Plugins/com.saparenprod.notioncompanion"
+# - copies the Resolve plugin (release archive: ./resolve/plugin, repository: build/resolve) to "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Workflow Integration Plugins/com.saparenprod.notioncompanion"
 # - copies WorkflowIntegration.node from the Resolve installation on this machine
 #   (Developer/Workflow Integrations/Examples/SamplePlugin/, as recommended by Blackmagic's README)
 #
@@ -15,9 +15,14 @@ DEST="$PLUGINS_DIR/$PLUGIN_ID"
 NODE_MODULE="$RESOLVE_SUPPORT/Developer/Workflow Integrations/Examples/SamplePlugin/WorkflowIntegration.node"
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="$REPO_DIR/plugin"
+if [ -f "$REPO_DIR/resolve/plugin/manifest.xml" ]; then
+    SRC="$REPO_DIR/resolve/plugin"          # release archive
+else
+    "$REPO_DIR/scripts/build.sh" >/dev/null # repository checkout
+    SRC="$REPO_DIR/build/resolve"
+fi
 
-echo "Notion Companion — installation"
+echo "Notion Companion for Editors — installation pour DaVinci Resolve"
 echo
 
 if [ ! -d "$RESOLVE_SUPPORT" ]; then
@@ -57,4 +62,4 @@ $SUDO xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
 echo "✓ Installé dans : $DEST"
 echo
-echo "Ensuite : lancez DaVinci Resolve Studio → menu Workspace (Espace de travail) → Workflow Integrations → Notion Companion."
+echo "Ensuite : lancez DaVinci Resolve Studio → menu Workspace (Espace de travail) → Workflow Integrations → Notion Companion for Editors."

@@ -1,6 +1,6 @@
-﻿# Installs Notion Companion as a DaVinci Resolve Workflow Integration (Windows).
+﻿# Installs Notion Companion for Editors as a DaVinci Resolve Workflow Integration (Windows).
 #
-# - copies .\plugin to %PROGRAMDATA%\Blackmagic Design\DaVinci Resolve\Support\Workflow Integration Plugins\com.saparenprod.notioncompanion
+# - copies the Resolve plugin (release archive: .\resolve\plugin) to %PROGRAMDATA%\Blackmagic Design\DaVinci Resolve\Support\Workflow Integration Plugins\com.saparenprod.notioncompanion
 # - copies WorkflowIntegration.node from the local Resolve installation (Developer\Workflow Integrations\Examples\SamplePlugin)
 #
 # Usage (PowerShell):  powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
@@ -14,7 +14,8 @@ $PluginsDir = Join-Path $Support 'Workflow Integration Plugins'
 $Dest       = Join-Path $PluginsDir $PluginId
 $NodeModule = Join-Path $Support 'Developer\Workflow Integrations\Examples\SamplePlugin\WorkflowIntegration.node'
 $RepoDir    = Split-Path -Parent $PSScriptRoot
-$Src        = Join-Path $RepoDir 'plugin'
+$Src        = Join-Path $RepoDir 'resolve\plugin'
+if (-not (Test-Path (Join-Path $Src 'manifest.xml'))) { $Src = Join-Path $RepoDir 'build\resolve' }
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
@@ -23,7 +24,7 @@ if (-not $isAdmin) {
     exit
 }
 
-Write-Host 'Notion Companion — installation'
+Write-Host 'Notion Companion for Editors — installation pour DaVinci Resolve'
 
 if (-not (Test-Path $Support)) { throw "DaVinci Resolve ne semble pas installé ($Support introuvable)." }
 if (-not (Test-Path $NodeModule)) {
@@ -32,7 +33,7 @@ if (-not (Test-Path $NodeModule)) {
     if (-not $found) { throw "WorkflowIntegration.node introuvable (installé avec DaVinci Resolve Studio, dossier Developer)." }
     $NodeModule = $found.FullName
 }
-if (-not (Test-Path (Join-Path $Src 'manifest.xml'))) { throw "Dossier plugin introuvable : $Src" }
+if (-not (Test-Path (Join-Path $Src 'manifest.xml'))) { throw "Plugin Resolve introuvable : utilisez l'archive Windows de la page Releases ($Src)" }
 
 if (Get-Process -Name 'Resolve' -ErrorAction SilentlyContinue) {
     Write-Warning "DaVinci Resolve est ouvert : redémarrez-le après l'installation."
@@ -45,5 +46,5 @@ Copy-Item -Path (Join-Path $Src '*') -Destination $Dest -Recurse -Force -Exclude
 Copy-Item -Path $NodeModule -Destination (Join-Path $Dest 'WorkflowIntegration.node') -Force
 
 Write-Host "OK - installé dans : $Dest"
-Write-Host 'Ensuite : DaVinci Resolve Studio > Workspace > Workflow Integrations > Notion Companion.'
+Write-Host 'Ensuite : DaVinci Resolve Studio > Workspace > Workflow Integrations > Notion Companion for Editors.'
 Read-Host 'Appuyez sur Entrée pour fermer'
