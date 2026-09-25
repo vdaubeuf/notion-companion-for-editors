@@ -316,7 +316,7 @@ Le workflow GitHub Actions construit alors les archives macOS et Windows et le `
 
 Copyright © 2026 vdaubeuf.
 
-Ce projet est un logiciel libre distribué sous licence **GNU GPL v3.0 ou ultérieure** ([LICENSE](LICENSE)). Vous pouvez l'utiliser, l'étudier, le modifier et le redistribuer. Toute version redistribuée, modifiée ou non, doit rester sous la même licence et fournir son code source.
+Ce projet est distribué sous licence **MIT** ([LICENSE](LICENSE)). Vous pouvez l'utiliser, le modifier et le redistribuer librement, à condition de conserver la mention de copyright et le texte de la licence.
 
 Le projet est fourni **sans aucune garantie**. Il n'est ni affilié à Notion Labs, ni à Blackmagic Design, ni à Adobe, ni approuvé par ces sociétés. Notion, DaVinci Resolve et Premiere Pro sont des marques de leurs propriétaires respectifs. Le module `WorkflowIntegration.node` de Blackmagic Design n'est pas couvert par cette licence et n'est pas redistribué : les installeurs le copient depuis votre installation de DaVinci Resolve.
 

@@ -5,5 +5,5 @@
     "description": "Notion Companion for Editors — DaVinci Resolve Workflow Integration",
     "main": "main.js",
     "private": true,
-    "license": "GPL-3.0-or-later"
+    "license": "MIT"
 }
