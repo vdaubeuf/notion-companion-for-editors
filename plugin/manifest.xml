@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BlackmagicDesign>
+    <Plugin>
+        <Id>com.saparenprod.notioncompanion</Id>
+        <Name>Notion Companion</Name>
+        <Version>0.1.0</Version>
+        <Description>Affiche la page Notion associée au projet Resolve ouvert</Description>
+        <FilePath>main.js</FilePath>
+    </Plugin>
+</BlackmagicDesign>

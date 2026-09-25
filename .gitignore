@@ -1,0 +1,21 @@
+# Blackmagic binary module: copied from the local Resolve installation at install time
+WorkflowIntegration.node
+
+# Secrets / local data (never commit)
+.env
+.env.*
+secrets.json
+*.token
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Dependencies / builds (none required today)
+node_modules/
+dist/
+out/
+*.log

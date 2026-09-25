@@ -1,0 +1,5 @@
+{
+    "name": "notion-companion-tests",
+    "private": true,
+    "main": "run.js"
+}

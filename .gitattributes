@@ -1,0 +1,3 @@
+# Keep Windows scripts byte-exact (UTF-8 BOM + CRLF, required by Windows PowerShell 5.1)
+*.ps1 -text
+*.sh text eol=lf
