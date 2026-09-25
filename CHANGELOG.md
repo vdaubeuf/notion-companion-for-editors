@@ -10,6 +10,7 @@ Version de test (pré-release). Voir [docs/STATUS.md](docs/STATUS.md) pour ce qu
 - Détection du projet Premiere par événements (`ProjectEvent`) et identifiant `Project.guid`, repli sur le chemin du `.prproj`.
 - Code réorganisé en un tronc commun (`core/`) et des adaptateurs par logiciel (`hosts/`).
 - Nouvelle icône.
+- Licence GNU GPL v3.0 ou ultérieure.
 - Associations existantes migrées automatiquement (format v2), token conservé.
 - Archives de release : Resolve + Premiere dans chaque archive macOS / Windows, et le `.ccx` Premiere seul.
 

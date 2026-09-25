@@ -41,6 +41,7 @@ L'association se fait une fois. Ensuite, quand vous changez de projet dans le lo
 9. [Publier une version](#9-publier-une-version)
 10. [Limitations connues](#10-limitations-connues)
 11. [Pistes futures](#11-pistes-futures)
+12. [Licence](#12-licence)
 
 ---
 
@@ -310,3 +311,12 @@ Le workflow GitHub Actions construit alors les archives macOS et Windows et le `
 - **Autres sources** (Google Drive, etc.) : la couche `core/notion/` est isolée et pourra devenir un fournisseur parmi d'autres.
 - **To-do modifiables** : écriture vers Notion ; le point d'extension `onTodoToggle` est déjà en place.
 - **Autres logiciels de montage** : il suffit d'ajouter un adaptateur dans `hosts/`.
+
+## 12. Licence
+
+Copyright © 2026 vdaubeuf.
+
+Ce projet est un logiciel libre distribué sous licence **GNU GPL v3.0 ou ultérieure** ([LICENSE](LICENSE)). Vous pouvez l'utiliser, l'étudier, le modifier et le redistribuer. Toute version redistribuée, modifiée ou non, doit rester sous la même licence et fournir son code source.
+
+Le projet est fourni **sans aucune garantie**. Il n'est ni affilié à Notion Labs, ni à Blackmagic Design, ni à Adobe, ni approuvé par ces sociétés. Notion, DaVinci Resolve et Premiere Pro sont des marques de leurs propriétaires respectifs. Le module `WorkflowIntegration.node` de Blackmagic Design n'est pas couvert par cette licence et n'est pas redistribué : les installeurs le copient depuis votre installation de DaVinci Resolve.
+
