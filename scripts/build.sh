@@ -37,7 +37,7 @@ EOF
 
 # ---------- DaVinci Resolve (Electron)
 R="$BUILD/resolve"
-cp "$REPO_DIR/hosts/resolve/"{main.js,preload.js,manifest.xml,package.json} "$R/"
+cp "$REPO_DIR/hosts/resolve/"{main.js,preload.js,manifest.xml,package.json} "$REPO_DIR/LICENSE" "$R/"
 copy_tree "$REPO_DIR/hosts/resolve/host" "$R/host"
 copy_tree "$REPO_DIR/hosts/resolve/icons" "$R/icons"
 # Shared code, resolved by require('core/...') from the main process.
@@ -51,7 +51,7 @@ set_version "$R/package.json"
 # ---------- Premiere Pro (UXP)
 P="$BUILD/premiere"
 cp "$REPO_DIR/hosts/premiere/"{index.html,manifest.json,premiere.css} "$P/"
-cp "$REPO_DIR/core/ui/styles.css" "$P/"
+cp "$REPO_DIR/core/ui/styles.css" "$REPO_DIR/LICENSE" "$P/"
 copy_tree "$REPO_DIR/hosts/premiere/icons" "$P/icons"
 python3 "$REPO_DIR/scripts/bundle.py" "$REPO_DIR/hosts/premiere/host/main.js" "$P/panel.bundle.js"
 set_version "$P/manifest.json"

@@ -25,7 +25,7 @@ stage() { # <dir>
     mkdir -p "$dir/resolve/plugin" "$dir/premiere" "$dir/scripts"
     ( cd "$REPO_DIR/build/resolve" && tar --exclude='.DS_Store' --exclude='WorkflowIntegration.node' -cf - . ) | ( cd "$dir/resolve/plugin" && tar -xf - )
     cp "$DIST/$CCX" "$dir/premiere/"
-    cp "$REPO_DIR/README.md" "$dir/"
+    cp "$REPO_DIR/README.md" "$REPO_DIR/LICENSE" "$dir/"
     mkdir -p "$dir/assets" && cp "$REPO_DIR/assets/icon-256.png" "$dir/assets/"
 }
 
