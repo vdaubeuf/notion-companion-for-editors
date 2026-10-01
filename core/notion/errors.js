@@ -24,6 +24,7 @@ const USER_MESSAGES = {
     write_rejected: 'Notion a refusé la modification.',
     not_editable: 'Ce bloc ne peut pas être modifié depuis le panneau. Ouvrez la page dans Notion.',
     edit_busy: 'Modification en cours sur ce bloc, patientez un instant.',
+    account_missing: 'Le compte Notion de cette page a été retiré. Reconnectez-le dans les paramètres ou choisissez une autre page.',
     too_many_pages: 'Un projet peut avoir au maximum 4 pages.',
     page_already_linked: 'Cette page est déjà ouverte dans un onglet de ce projet.',
     last_page: 'C’est la dernière page du projet : utilisez « Dissocier » pour retirer l’association.',

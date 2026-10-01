@@ -15,6 +15,7 @@ const { createOperations } = require('core/operations');
 const { NotionClient } = require('core/notion/client');
 const { isNotionUrl } = require('core/notion/ids');
 const { AssociationStore } = require('core/storage/associations');
+const { AccountStore } = require('core/storage/accounts');
 const { SecretStore } = require('core/storage/secrets');
 const { SettingsStore } = require('core/storage/settings');
 const { PageCache } = require('core/storage/cache');
@@ -138,14 +139,16 @@ async function init(pluginRoot) {
     const settings = new SettingsStore(backend, logger.scope('settings'));
     const associations = new AssociationStore(backend, logger.scope('assoc'));
     const cache = new PageCache(backend, { maxPages: C.CACHE_MAX_PAGES, log: logger.scope('cache') });
+    const accounts = new AccountStore(backend, logger.scope('accounts'));
     const secrets = new SecretStore(createElectronSecretProvider(safeStorage, backend, logger.scope('secrets')), logger.scope('secrets'), {
-        onChange: (token) => logger.setSecret(token),
+        onChange: (tokens) => logger.setSecrets(tokens),
     });
-    await Promise.all([settings.load(), associations.load(), secrets.load()]);
+    await Promise.all([settings.load(), associations.load(), accounts.load()]);
+    await secrets.load(['default', ...accounts.ids()]);
 
-    const client = new NotionClient({
-        getToken: () => secrets.getToken(),
-        // Chromium network stack: honours the system proxy configuration.
+    // One client per account; Chromium network stack: honours the system proxy configuration.
+    const makeClient = (getToken) => new NotionClient({
+        getToken,
         fetchImpl: (url, init) => net.fetch(url, init),
         version: C.NOTION_VERSION,
         baseUrl: C.NOTION_API_BASE,
@@ -160,7 +163,7 @@ async function init(pluginRoot) {
         log: logger.scope('watcher'),
     });
     const controller = new Controller({
-        watcher, associations, secrets, cache, client,
+        watcher, associations, accounts, secrets, cache, makeClient,
         log: logger.scope('controller'),
         hostInfo: {
             id: 'resolve',
@@ -258,7 +261,7 @@ async function init(pluginRoot) {
     mainWindow.on('closed', () => { mainWindow = null; app.quit(); });
 
     watcher.start();
-    if (secrets.hasToken()) {
+    if (accounts.list('notion').length) {
         controller.checkNotion().catch((e) => log.warn('Initial Notion check failed', e.code || e.message));
     }
 

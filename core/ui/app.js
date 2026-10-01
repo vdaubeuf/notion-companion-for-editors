@@ -104,23 +104,27 @@ function showView(view, ctx = {}) {
         let heading = 'Associer une page Notion';
         if (forKey || adding) heading = 'Ajouter une page au projet';
         else if (assoc) heading = assoc.pages && assoc.pages.length > 1 ? 'Remplacer cet onglet' : 'Changer de page';
+        const accounts = (ui.state.notion.accounts || []).filter((acc) => acc.status !== 'invalid');
         const v = new SearchView({
             api,
             call,
             heading,
+            accounts,
+            // Default: the account of the page shown, so a new tab comes from the same workspace.
+            accountId: assoc && accounts.some((acc) => acc.id === assoc.account) ? assoc.account : ui.state.notion.defaultId,
             subheading: projectName ? `Projet ${ui.state.host.name} : ${projectName}` : null,
             onClose: () => showView(forKey ? 'associations' : 'main'),
-            onPick: async (page) => {
+            onPick: async (page, accountId) => {
                 if (forKey) {
-                    await call(api.associateForKey, ctx.key, page.id);
+                    await call(api.associateForKey, ctx.key, page.id, accountId);
                     toast('Page ajoutée');
                     showView('associations');
                 } else if (adding) {
-                    await call(api.addPage, page.id);
+                    await call(api.addPage, page.id, accountId);
                     toast('Page ajoutée en onglet');
                     showView('main');
                 } else {
-                    await call(api.associate, page.id);
+                    await call(api.associate, page.id, accountId);
                     toast('Association enregistrée');
                     showView('main');
                 }

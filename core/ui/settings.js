@@ -25,7 +25,7 @@ function select(value, options, onChange) {
 class SettingsView {
     constructor({ api, call, toast, onClose, onManageAssociations, onSettingsChanged }) {
         Object.assign(this, { api, call, toast, onClose, onManageAssociations, onSettingsChanged });
-        this.editingToken = false;
+        this.editing = null;     // null | 'new' | <account id> whose token is being replaced
         this.busy = null;
         this.tokenError = null;
         this.tokenInput = null;
@@ -67,66 +67,94 @@ class SettingsView {
         return h('div', { class: 'set-section' }, h('div', { class: 'set-title', text: title }), children);
     }
 
-    _notionSection() {
-        const n = this.state.notion;
-        const [cls, label] = STATUS_TEXT[n.status] || STATUS_TEXT.unchecked;
-        const user = n.status === 'ok' && n.user && (n.user.name || n.user.workspace)
-            ? h('span', { class: 'muted', text: ` · ${[n.user.name, n.user.workspace].filter(Boolean).join(' — ')}` }) : null;
-        const statusLine = h('div', { class: 'set-row' }, h('span', { class: `dot ${cls}` }), h('span', { class: 'set-status', text: label }), user);
-
-        const configured = n.status !== 'unconfigured';
-        if (!configured || this.editingToken) {
-            if (!this.tokenInput) {
-                // Created once and reused across renders so a typed value survives a failed attempt.
-                this.tokenInput = h('input', {
-                    class: 'text-input', type: 'password', placeholder: 'Coller le Personal Access Token Notion', autocomplete: 'off', spellcheck: 'false',
-                    onKeydown: (e) => {
-                        if (e.key === 'Enter') this._saveToken();
-                        if (e.key === 'Escape' && this.state.notion.status !== 'unconfigured') this._cancelEdit();
-                    },
-                });
-                setTimeout(() => this.tokenInput && this.tokenInput.focus(), 0);
-            }
-            return this._section('Notion', statusLine,
-                h('div', { class: 'set-field' }, this.tokenInput),
-                this.tokenError ? h('div', { class: 'field-error', text: this.tokenError }) : null,
-                h('div', { class: 'set-actions' },
-                    button({ class: 'btn primary small', onClick: () => this._saveToken(), disabled: this.busy === 'save' }, this.busy === 'save' ? 'Vérification…' : 'Enregistrer et tester'),
-                    configured ? button({ class: 'btn ghost small', onClick: () => this._cancelEdit() }, 'Annuler') : null),
-                h('p', { class: 'hint' },
-                    'Le token est vérifié puis confié au stockage sécurisé du système. Il n’est jamais affiché ni journalisé. ',
-                    h('span', { class: 'link', role: 'link', tabindex: '0', onClick: () => this.api.openTokenHelp(), text: 'Créer un token' })));
-        }
-
-        return this._section('Notion', statusLine,
-            h('div', { class: 'set-actions' },
-                button({
-                    class: 'btn small', disabled: this.busy === 'test',
-                    onClick: async () => {
-                        try { await this._do('test', () => this.call(this.api.testConnection)); this.toast('✓ Connecté à Notion'); } catch (e) { this.toast(e.message, 'error'); }
-                    },
-                }, this.busy === 'test' ? 'Test…' : 'Tester la connexion'),
-                button({ class: 'btn small', onClick: () => { this.editingToken = true; this._render(); } }, 'Modifier le token'),
-                button({
-                    class: 'btn small ghost danger', onClick: async () => {
-                        if (this.busy !== 'confirm-clear') { this.busy = 'confirm-clear'; this._render(); return; }
-                        this.busy = null;
-                        await this.call(this.api.clearToken).catch(() => {});
-                        this.toast('Token supprimé');
-                    },
-                }, this.busy === 'confirm-clear' ? 'Confirmer la suppression' : 'Supprimer')));
+    _accountLabel(acc) {
+        return [acc.name, acc.workspace].filter(Boolean).filter((v, i, arr) => arr.indexOf(v) === i).join(' — ') || 'Compte Notion';
     }
 
-    async _saveToken() {
+    // Token field, reused across renders so a typed value survives a failed attempt.
+    _tokenField(target) {
+        if (!this.tokenInput) {
+            this.tokenInput = h('input', {
+                class: 'text-input', type: 'password', placeholder: 'Coller le Personal Access Token Notion', autocomplete: 'off', spellcheck: 'false',
+                onKeydown: (e) => {
+                    if (e.key === 'Enter') this._saveToken(target);
+                    if (e.key === 'Escape' && this.state.notion.accounts.length) this._cancelEdit();
+                },
+            });
+            setTimeout(() => this.tokenInput && this.tokenInput.focus(), 0);
+        }
+        const canCancel = this.state.notion.accounts.length > 0;
+        return h('div', { class: 'token-form' },
+            h('div', { class: 'set-field' }, this.tokenInput),
+            this.tokenError ? h('div', { class: 'field-error', text: this.tokenError }) : null,
+            h('div', { class: 'set-actions' },
+                button({ class: 'btn primary small', onClick: () => this._saveToken(target), disabled: this.busy === 'save' }, this.busy === 'save' ? 'Vérification…' : 'Enregistrer et tester'),
+                canCancel ? button({ class: 'btn ghost small', onClick: () => this._cancelEdit() }, 'Annuler') : null));
+    }
+
+    _accountRow(acc) {
+        const [cls, label] = STATUS_TEXT[acc.status] || STATUS_TEXT.unchecked;
+        const confirmKey = `confirm-clear:${acc.id}`;
+        const multiple = this.state.notion.accounts.length > 1;
+        return h('div', { class: 'account' },
+            h('div', { class: 'set-row' },
+                h('span', { class: `dot ${cls}`, title: label }),
+                h('span', { class: 'set-status ellipsis', text: acc.status === 'ok' ? this._accountLabel(acc) : label, title: this._accountLabel(acc) }),
+                multiple && acc.id === this.state.notion.defaultId ? h('span', { class: 'badge', text: 'Par défaut' }) : null),
+            acc.status !== 'ok' && (acc.name || acc.workspace) ? h('div', { class: 'account-sub muted', text: this._accountLabel(acc) }) : null,
+            this.editing === acc.id ? this._tokenField(acc.id) : h('div', { class: 'set-actions' },
+                button({
+                    class: 'btn small', disabled: this.busy === `test:${acc.id}`,
+                    onClick: async () => {
+                        try { await this._do(`test:${acc.id}`, () => this.call(this.api.testConnection, acc.id)); this.toast('✓ Connecté à Notion'); } catch (e) { this.toast(e.message, 'error'); }
+                    },
+                }, this.busy === `test:${acc.id}` ? 'Test…' : 'Tester'),
+                button({ class: 'btn small', onClick: () => this._startEdit(acc.id) }, 'Remplacer le token'),
+                button({
+                    class: `btn small ${this.busy === confirmKey ? 'danger-solid' : 'ghost danger'}`, onClick: async () => {
+                        if (this.busy !== confirmKey) { this.busy = confirmKey; this._render(); return; }
+                        this.busy = null;
+                        await this.call(this.api.clearToken, acc.id).catch(() => {});
+                        this.toast('Compte retiré');
+                    },
+                }, this.busy === confirmKey ? 'Confirmer' : 'Retirer')));
+    }
+
+    _notionSection() {
+        const accounts = this.state.notion.accounts || [];
+        const hint = h('p', { class: 'hint' },
+            'Chaque token est vérifié puis confié au stockage sécurisé du système. Il n’est jamais affiché ni journalisé. Un token par espace de travail Notion. ',
+            h('span', { class: 'link', role: 'link', tabindex: '0', onClick: () => this.api.openTokenHelp(), text: 'Créer un token' }));
+        if (!accounts.length) {
+            return this._section('Notion',
+                h('div', { class: 'set-row' }, h('span', { class: 'dot off' }), h('span', { class: 'set-status', text: STATUS_TEXT.unconfigured[1] })),
+                this._tokenField(null), hint);
+        }
+        return this._section(accounts.length > 1 ? `Notion · ${accounts.length} comptes` : 'Notion',
+            accounts.map((acc) => this._accountRow(acc)),
+            this.editing === 'new'
+                ? h('div', { class: 'account' }, h('div', { class: 'set-row' }, h('span', { class: 'set-status', text: 'Nouveau compte' })), this._tokenField(null))
+                : h('div', { class: 'set-actions' }, button({ class: 'btn small', onClick: () => this._startEdit('new') }, icon('plus'), 'Ajouter un compte Notion')),
+            hint);
+    }
+
+    _startEdit(target) {
+        this.editing = target;
+        this.tokenError = null;
+        this.tokenInput = null;
+        this._render();
+    }
+
+    async _saveToken(target) {
         if (!this.tokenInput || this.busy === 'save') return;
         const token = this.tokenInput.value;
         this.tokenError = null;
         try {
-            await this._do('save', () => this.call(this.api.saveToken, token));
+            const acc = await this._do('save', () => this.call(this.api.saveToken, token, target || undefined));
             this.tokenInput.value = '';
             this.tokenInput = null;
-            this.editingToken = false;
-            this.toast('✓ Connecté à Notion');
+            this.editing = null;
+            this.toast(`✓ Connecté à Notion${acc && acc.workspace ? ` (${acc.workspace})` : ''}`);
         } catch (e) {
             this.tokenError = e.message;
         }
@@ -134,7 +162,7 @@ class SettingsView {
     }
 
     _cancelEdit() {
-        this.editingToken = false;
+        this.editing = null;
         this.tokenError = null;
         if (this.tokenInput) this.tokenInput.value = '';
         this.tokenInput = null;

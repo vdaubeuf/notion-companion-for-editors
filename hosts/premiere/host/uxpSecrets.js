@@ -4,7 +4,8 @@
 // (require('uxp').storage.secureStorage): OS-level secure storage managed by
 // the Adobe host, scoped to this plugin.
 
-const KEY = 'notion-token';
+// 'default' = the single token of v0.2 (key unchanged); other accounts get their own item.
+const itemKey = (key) => (key === 'default' ? 'notion-token' : `notion-token:${key}`);
 
 function decode(value) {
     if (value === null || value === undefined) return null;
@@ -28,19 +29,19 @@ function createUxpSecretProvider(uxp) {
         available() {
             return !!ss;
         },
-        async load() {
+        async load(key) {
             if (!ss) return null;
             try {
-                return decode(await ss.getItem(KEY));
+                return decode(await ss.getItem(itemKey(key)));
             } catch (_) {
                 return null; // no item stored yet
             }
         },
-        async save(token) {
-            await ss.setItem(KEY, token);
+        async save(key, token) {
+            await ss.setItem(itemKey(key), token);
         },
-        async clear() {
-            try { await ss.removeItem(KEY); } catch (_) { /* nothing stored */ }
+        async clear(key) {
+            try { await ss.removeItem(itemKey(key)); } catch (_) { /* nothing stored */ }
         },
     };
 }

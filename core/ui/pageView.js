@@ -276,6 +276,12 @@ class PageView {
         this.contentEl.appendChild(h('div', { class: 'n-title' }, titleIcon, h('span', { text: content.page ? content.page.title : '' })));
         this.contentEl.classList.toggle('edit-mode', this.editMode);
         this.contentEl.appendChild(renderBlocks(content.blocks, { partial: !!content.partial, openToggles: this.openToggles, edit: this._editCtx(content) }));
+        // Focus the text being edited right away (keys typed just after the click must not be lost).
+        const area = this.edit.editingId && this.contentEl.querySelector ? this.contentEl.querySelector('.edit-area') : null;
+        if (area) {
+            area.focus();
+            try { area.setSelectionRange(area.value.length, area.value.length); } catch (_) { /* UXP */ }
+        }
         if (!content.blocks || content.blocks.length === 0) {
             this.contentEl.appendChild(h('p', { class: 'muted', text: content.partial ? 'Chargement de la page…' : 'Cette page est vide.' }));
         }

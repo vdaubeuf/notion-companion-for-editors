@@ -343,6 +343,8 @@ span[class*="bg-"] { border-radius: 3px; padding: 0 2px; }
 .view-sub { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .view-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 
+.search-account { display: flex; align-items: center; gap: 8px; margin: 8px 10px 0; }
+.search-account .select { margin-left: auto; max-width: 70%; }
 .search-box { display: flex; align-items: center; gap: 7px; margin: 8px 10px; padding: 0 9px; height: 30px; border: 1px solid var(--border); border-radius: var(--radius); background: #161618; color: var(--muted); }
 .search-box:focus-within { border-color: var(--accent); }
 .search-input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--text-strong); font: inherit; font-size: 13px; }
@@ -369,6 +371,13 @@ span[class*="bg-"] { border-radius: 3px; padding: 0 2px; }
 .kv-v { text-align: right; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; user-select: text; }
 .set-status { color: var(--text-strong); }
 .set-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.account { padding: 4px 0 8px; }
+.account + .account { border-top: 1px solid var(--border-soft); padding-top: 8px; }
+.account .set-status { min-width: 0; flex: 0 1 auto; }
+.account-sub { font-size: 11px; margin: 0 0 0 14px; }
+.account .set-actions { margin-top: 5px; }
+.account + .set-actions { margin-top: 6px; }
+.set-actions .btn .icon { width: 13px; height: 13px; }
 .set-field { margin-top: 8px; }
 .set-check { display: flex; align-items: center; gap: 8px; min-height: 24px; cursor: pointer; }
 .set-check input { accent-color: var(--accent); margin: 0; }

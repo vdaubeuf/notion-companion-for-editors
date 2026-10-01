@@ -8,6 +8,9 @@
 // plus any "Bearer <value>" fragment.
 const TOKEN_PATTERNS = [
     /\b(secret_|ntn_)[A-Za-z0-9_\-]{8,}/g,
+    // Google OAuth access / refresh tokens.
+    /\b(ya29\.)[A-Za-z0-9_\-.]{8,}/g,
+    /\b(1\/\/)[A-Za-z0-9_\-]{8,}/g,
     /(Bearer\s+)[^\s"',]+/gi,
 ];
 
@@ -32,21 +35,25 @@ function inspect(value) {
 class Logger {
     constructor() {
         this.sinks = [];
-        this.secret = null;
+        this.secrets = [];
     }
 
     addSink(fn) {
         this.sinks.push(fn);
     }
 
-    // Lets the logger redact the exact stored token too, whatever its format.
+    // Lets the logger redact the exact stored tokens too, whatever their format.
+    setSecrets(tokens) {
+        this.secrets = (tokens || []).filter((t) => typeof t === 'string' && t.length >= 8);
+    }
+
     setSecret(token) {
-        this.secret = token && token.length >= 8 ? token : null;
+        this.setSecrets(token ? [token] : []);
     }
 
     _write(level, scope, args) {
         let msg = redact(args.map(inspect).join(' '));
-        if (this.secret) msg = msg.split(this.secret).join('[REDACTED]');
+        for (const secret of this.secrets) msg = msg.split(secret).join('[REDACTED]');
         const line = `${new Date().toISOString()} ${level.padEnd(5)} [${scope}] ${msg}`;
         for (const sink of this.sinks) {
             try { sink(line, level); } catch (_) { /* never throw from logging */ }

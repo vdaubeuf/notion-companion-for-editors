@@ -56,6 +56,11 @@ const v = {
         if (!id) throw new InputError('bad block id');
         return id;
     },
+    accountId(value) {
+        if (value === undefined || value === null || value === '') return null;
+        if (typeof value !== 'string' || !/^[a-z0-9]{1,40}$/.test(value)) throw new InputError('bad account id');
+        return value;
+    },
     boolean(value) {
         if (typeof value !== 'boolean') throw new InputError('bad boolean');
         return value;
@@ -89,18 +94,20 @@ function createOperations({ controller, actions }) {
         getSettings: () => actions.getSettings(),
         patchSettings: (patch) => actions.patchSettings(v.patch(patch)),
 
-        saveToken: (token) => controller.saveToken(v.token(token)),
-        testConnection: () => controller.checkNotion(),
-        clearToken: () => controller.clearToken(),
-        search: (query, cursor) => controller.search(
+        // accountId: Notion account (see state.notion.accounts); omitted = default account.
+        saveToken: (token, accountId) => controller.saveToken(v.token(token), v.accountId(accountId)),
+        testConnection: (accountId) => controller.checkNotion(v.accountId(accountId)),
+        clearToken: (accountId) => controller.clearToken(v.accountId(accountId)),
+        search: (query, cursor, accountId) => controller.search(
             v.string(query, 200, { optional: true }) || '',
             v.string(cursor, 200, { optional: true }),
+            v.accountId(accountId),
         ),
-        parents: (refs) => controller.parentTitles(v.parentRefs(refs)),
+        parents: (refs, accountId) => controller.parentTitles(v.parentRefs(refs), v.accountId(accountId)),
 
-        associate: (pageId) => controller.associate(v.pageId(pageId)),
-        associateForKey: (key, pageId) => controller.associateForKey(v.assocKey(key), v.pageId(pageId)),
-        addPage: (pageId) => controller.addPage(v.pageId(pageId)),
+        associate: (pageId, accountId) => controller.associate(v.pageId(pageId), v.accountId(accountId)),
+        associateForKey: (key, pageId, accountId) => controller.associateForKey(v.assocKey(key), v.pageId(pageId), v.accountId(accountId)),
+        addPage: (pageId, accountId) => controller.addPage(v.pageId(pageId), v.accountId(accountId)),
         removePage: (pageId) => controller.removePage(v.pageId(pageId)),
         selectPage: (pageId) => controller.selectPage(v.pageId(pageId)),
         removePageForKey: (key, pageId) => controller.removePageForKey(v.assocKey(key), v.pageId(pageId)),

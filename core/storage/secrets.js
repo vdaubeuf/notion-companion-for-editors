@@ -1,23 +1,23 @@
 'use strict';
 
-// Notion token holder.
+// Token holder, one token per account (Notion workspaces, Google accounts…).
 //
 // The actual secure storage is provided by each host:
 //   Resolve (Electron): safeStorage — macOS Keychain / Windows DPAPI
 //   Premiere (UXP):     uxp.storage.secureStorage — OS-level secure storage
-// Provider interface:
-//   available() -> boolean        load() -> Promise<string|null>
-//   save(token) -> Promise<void>  clear() -> Promise<void>
+// Provider interface (key = account id; 'default' is the single token of v0.1/v0.2):
+//   available() -> boolean             load(key) -> Promise<string|null>
+//   save(key, token) -> Promise<void>  clear(key) -> Promise<void>
 //
-// The clear-text token only lives in memory here. It is never sent to the UI
-// layer, never logged (see logger.redact) and never written in clear text.
+// Clear-text tokens only live in memory here. They are never sent to the UI
+// layer, never logged (see logger.redact / setSecrets) and never written in clear text.
 
 class SecretStore {
     constructor(provider, log, { onChange } = {}) {
         this.provider = provider;
         this.log = log;
         this.onChange = onChange || (() => {});
-        this.token = null;
+        this.tokens = new Map();
     }
 
     get encryptionAvailable() {
@@ -28,40 +28,51 @@ class SecretStore {
         }
     }
 
-    async load() {
-        try {
-            this.token = (await this.provider.load()) || null;
-        } catch (e) {
-            this.log.error('Cannot read the stored Notion token (secure storage access denied?)', e.message);
-            this.token = null;
+    _changed() {
+        this.onChange([...this.tokens.values()]);
+    }
+
+    /** Loads the tokens of the given keys (missing ones are skipped). */
+    async load(keys = ['default']) {
+        for (const key of new Set(keys)) {
+            try {
+                const token = (await this.provider.load(key)) || null;
+                if (token) this.tokens.set(key, token); else this.tokens.delete(key);
+            } catch (e) {
+                this.log.error(`Cannot read a stored token (secure storage access denied?) [${key}]`, e.message);
+                this.tokens.delete(key);
+            }
         }
-        this.onChange(this.token);
-        return this.token;
+        this._changed();
     }
 
-    hasToken() {
-        return !!this.token;
+    keys() {
+        return [...this.tokens.keys()];
     }
 
-    getToken() {
-        return this.token;
+    has(key) {
+        return this.tokens.has(key);
     }
 
-    async setToken(token) {
+    get(key) {
+        return this.tokens.get(key) || null;
+    }
+
+    async set(key, token) {
         if (!this.encryptionAvailable) {
             const err = new Error('OS secure storage unavailable');
             err.code = 'encryption_unavailable';
             throw err;
         }
-        await this.provider.save(token);
-        this.token = token;
-        this.onChange(token);
+        await this.provider.save(key, token);
+        this.tokens.set(key, token);
+        this._changed();
     }
 
-    async clearToken() {
-        await this.provider.clear();
-        this.token = null;
-        this.onChange(null);
+    async clear(key) {
+        await this.provider.clear(key);
+        this.tokens.delete(key);
+        this._changed();
     }
 }
 
