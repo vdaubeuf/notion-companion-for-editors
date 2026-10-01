@@ -1,5 +1,13 @@
 # Changelog
 
+## Non publié
+
+- **Modifier la page depuis le panneau** : cocher / décocher les to-do ; en mode édition (crayon), modifier le texte d'un bloc et supprimer des blocs (corbeille Notion, avec confirmation). La mise en forme hors du passage modifié est conservée. En cas de refus de Notion, la modification est annulée à l'écran.
+- **1 à 4 pages par projet**, affichées en onglets ; l'onglet actif est mémorisé par projet.
+- **Plusieurs comptes Notion** (un token par workspace) ; chaque page retient son compte. Le token de la v0.2 devient le compte par défaut, sans rien ressaisir.
+- Flèches des titres dépliables alignées sur le texte du titre.
+- Associations migrées automatiquement au format v3.
+
 ## 0.2.0
 
 Points encore à vérifier et prochaines étapes : [docs/STATUS.md](docs/STATUS.md).

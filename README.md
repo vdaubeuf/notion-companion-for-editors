@@ -2,7 +2,7 @@
 
 # Notion Companion for Editors
 
-Panneau pour **DaVinci Resolve Studio** et **Adobe Premiere Pro** qui associe une page Notion à chaque projet de montage et l'affiche automatiquement.
+Panneau pour **DaVinci Resolve Studio** et **Adobe Premiere Pro** qui associe une à quatre pages Notion à chaque projet de montage, les affiche automatiquement et permet de les modifier légèrement (to-do, texte, suppression de blocs).
 
 ```
 Projet A  →  Page Notion A
@@ -109,6 +109,10 @@ Un Personal Access Token **agit en votre nom** : il voit toutes les pages auxque
 
 Resolve et Premiere gardent chacun leur propre copie du token. Saisissez-le une fois dans chaque panneau. Vous pouvez utiliser le même token pour les deux.
 
+**Plusieurs workspaces** : un token donne accès à un seul workspace. Ajoutez un token par workspace dans **⚙ → Notion → Ajouter un compte Notion**. Chaque page associée retient le compte avec lequel elle a été ajoutée.
+
+**Modifications depuis le panneau** : le token doit avoir le droit de modifier le contenu. Avec un token d'intégration interne, activez la capacité **Update content** de l'intégration. Si Notion refuse, le panneau l'indique et annule la modification affichée.
+
 ## 3. Utilisation
 
 1. Ouvrez un projet, puis le panneau.
@@ -119,13 +123,24 @@ Resolve et Premiere gardent chacun leur propre copie du token. Saisissez-le une 
    - vous pouvez aussi **coller le lien** d'une page ;
    - flèches et Entrée au clavier.
 4. La page s'affiche. L'association est enregistrée immédiatement. Elle est rechargée automatiquement à chaque retour sur ce projet.
+5. **Plusieurs pages par projet** (4 au maximum) : **••• → Ajouter une page Notion**. Les pages apparaissent en onglets dans la barre du haut ; l'onglet affiché est mémorisé par projet. **••• → Retirer cet onglet** ou **Remplacer cet onglet** pour les gérer.
+
+**Modifier la page** :
+
+- **To-do** : cliquez sur la case pour cocher ou décocher. La modification est envoyée à Notion immédiatement.
+- **Mode édition** (crayon dans la barre de la page) : cliquez sur un texte pour le modifier. **Entrée** enregistre, **Maj+Entrée** ajoute un retour à la ligne, **Échap** annule (dans un bloc de code : **Cmd/Ctrl+Entrée** enregistre).
+- **Supprimer un bloc** : en mode édition, survolez-le puis cliquez sur la corbeille, puis sur **Supprimer ?** pour confirmer. Le bloc va dans la corbeille Notion (récupérable depuis Notion). Supprimer un titre dépliable ou un toggle supprime aussi son contenu.
+- La mise en forme (gras, couleurs, liens) est conservée en dehors du passage modifié ; le texte ajouté prend le style du texte qui le précède.
+- Non modifiables depuis le panneau : les blocs contenant des mentions ou des équations, les sous-pages et bases de données (jamais supprimées depuis le panneau), les tableaux, colonnes et blocs synchronisés.
 
 | Élément | Rôle |
 |---|---|
 | En-tête | Projet, timeline ou séquence active, état de Notion (pastille). |
 | ↻ | Revérifie le projet et recharge la page depuis Notion. |
 | Ouvrir dans Notion | Ouvre la page dans l'app Notion si elle est disponible, sinon dans le navigateur (réglable). |
-| ••• | Changer de page, Dissocier. |
+| ✎ | Mode édition : modifier le texte, supprimer des blocs. |
+| Onglets | Une page par onglet quand le projet en a plusieurs. |
+| ••• | Ajouter une page (onglet), remplacer ou retirer l'onglet, Dissocier. |
 | « Cache · il y a 5 min » | Le contenu vient du cache local (hors ligne, ou actualisation en cours). |
 | Ancrer / Épingle (Resolve) | Colle la fenêtre au bord de l'écran, pleine hauteur, ou la garde au premier plan. |
 
@@ -133,8 +148,8 @@ Quand le panneau reprend le focus, il vérifie au plus une fois par minute si la
 
 **Paramètres** :
 
-- **Notion** : tester, modifier ou supprimer le token.
-- **Associations** : voir le nombre de projets liés ; **Gérer les associations** pour changer la page ou supprimer une association.
+- **Notion** : un ou plusieurs comptes (un par workspace) ; tester, remplacer le token, retirer, ajouter un compte.
+- **Associations** : voir le nombre de projets liés ; **Gérer les associations** pour ajouter ou retirer des pages, ou supprimer une association.
 - **Logiciel** : version, méthode d'identification des projets.
 - **Affichage** : ouverture des liens ; ancrage et premier plan pour Resolve.
 - **Cache** : taille, vider.
@@ -182,7 +197,9 @@ Seules des méthodes documentées sont utilisées. Leur présence est vérifiée
 
 Fichiers :
 
-- `associations.json` : associations projet → page, versionnées avec migrations. Les associations de la v0.1 sont migrées automatiquement.
+- `associations.json` : associations projet → pages, versionnées avec migrations. Les associations des v0.1 et v0.2 sont migrées automatiquement.
+- `accounts.json` : comptes Notion connectés (nom, workspace ; aucun token).
+- Resolve : `secrets.json` contient les tokens **chiffrés** (`notionToken` pour le compte de la v0.2, `tokens` pour les suivants).
 - `settings.json` : réglages du panneau.
 - `cache/<pageId>.json` : cache des pages (sous Premiere : `cache__<pageId>.json`).
 - `logs/companion.log` : journal développeur (sous Premiere : `logs__companion.log`).
@@ -191,21 +208,25 @@ Exemple d'association :
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "associations": {
     "uid:a1b2c3d4-…": {
       "host": "resolve",
       "projectUid": "a1b2c3d4-…",
       "projectName": "Mon documentaire",
       "location": { "key": "Disk|Local Database", "label": "Local Database · Documentaires" },
-      "notionPageId": "…",
-      "notionPageTitle": "Mon documentaire",
-      "notionPageUrl": "https://www.notion.so/…",
-      "notionPageIcon": { "type": "emoji", "emoji": "🎬" }
+      "pages": [
+        { "source": "notion", "id": "…", "title": "Mon documentaire", "url": "https://www.notion.so/…", "icon": { "type": "emoji", "emoji": "🎬" }, "account": "default" },
+        { "source": "notion", "id": "…", "title": "Planning", "url": "https://www.notion.so/…", "icon": null, "account": "3f9a1c0b7d2e" }
+      ],
+      "activePage": "…",
+      "notionPageId": "…", "notionPageTitle": "Mon documentaire", "notionPageUrl": "https://www.notion.so/…", "notionPageIcon": { "type": "emoji", "emoji": "🎬" }
     }
   }
 }
 ```
+
+Les champs `notionPage…` recopient la première page : une version plus ancienne du plugin peut ainsi encore lire le fichier.
 
 **Sécurité** :
 
@@ -221,8 +242,9 @@ core/                 code commun (JavaScript CommonJS, sans dépendance)
   controller.js       projet actif → association → contenu Notion
   operations.js       opérations appelables par l'interface (validation)
   identity.js         identification des projets (Resolve / Premiere)
-  notion/             client HTTP (3 req/s, retries, Retry-After), recherche, blocs, chargement récursif
-  storage/            JSON versionné + migrations, associations, cache, token, réglages
+  notion/             client HTTP (3 req/s, retries, Retry-After), recherche, blocs, chargement récursif,
+                      edit.js (modifications envoyées à Notion)
+  storage/            JSON versionné + migrations, associations (1 à 4 pages), comptes, cache, tokens, réglages
   ui/                 interface commune (DOM compatible Chromium et UXP) + styles.css
 hosts/
   resolve/            Workflow Integration : manifest.xml, main.js, preload.js, host/ (bridge Resolve,
@@ -302,14 +324,13 @@ Le workflow GitHub Actions construit alors les archives macOS et Windows et le `
 - **Resolve** : aucun événement de changement de projet, donc une interrogation toutes les 1,5 s.
 - **Premiere** : `Project.guid` n'est pas stocké en clair dans le `.prproj`. Après une copie ou un déplacement du fichier, le panneau retrouve le projet par son chemin, ou propose l'ancienne page (règles §4).
 - **Premiere** : les icônes sont des glyphes texte, car la prise en charge du SVG inline varie selon les versions d'UXP.
-- **To-do en lecture seule**, équations en texte brut, vidéos, PDF et embeds proposés en liens.
+- **Édition limitée** : to-do, texte des blocs et suppression ; pas de création de blocs ni de mise en forme depuis le panneau. Équations en texte brut, vidéos, PDF et embeds proposés en liens.
 - **Windows** : scripts et chemins conformes aux documentations Blackmagic et Adobe, mais **non testés sur une machine Windows réelle**.
 
 ## 11. Pistes futures
 
-- **Plusieurs comptes et workspaces Notion** : plusieurs tokens, et chaque association retient le compte à utiliser. Le format versionné de `associations.json` le prépare.
-- **Autres sources** (Google Drive, etc.) : la couche `core/notion/` est isolée et pourra devenir un fournisseur parmi d'autres.
-- **To-do modifiables** : écriture vers Notion ; le point d'extension `onTodoToggle` est déjà en place.
+- **Ajout de blocs** depuis le panneau (nouvelle ligne, nouvelle to-do sous un bloc).
+- **Google Docs / Google Drive** : envisageable (chaque page retient déjà sa `source` et son compte), mais pas prévu pour l'instant à cause des contraintes côté Google, voir [docs/STATUS.md](docs/STATUS.md#évolutions-envisagées).
 - **Autres logiciels de montage** : il suffit d'ajouter un adaptateur dans `hosts/`.
 
 ## 12. Licence

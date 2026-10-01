@@ -1,12 +1,12 @@
 'use strict';
 
-// Connected accounts (no secrets here: tokens are in SecretStore, keyed by account id).
+// Connected Notion accounts (no secrets here: tokens are in SecretStore, keyed by account id).
 //
 // File format (accounts.json, schemaVersion 1):
 // {
 //   "schemaVersion": 1,
 //   "accounts": [
-//     { "id": "default" | "<12 hex>", "kind": "notion" | "google",
+//     { "id": "default" | "<12 hex>", "kind": "notion",
 //       "name": "Valentin", "workspace": "Sapa", "externalId": "<bot / user id>", "addedAt": "ISO" }
 //   ]
 // }
@@ -15,7 +15,8 @@
 
 const { JsonStore } = require('./jsonStore');
 
-const KINDS = new Set(['notion', 'google']);
+// `kind` leaves room for other sources later (see docs/STATUS.md, "Évolutions envisagées").
+const KINDS = new Set(['notion']);
 
 function randomId() {
     let out = '';

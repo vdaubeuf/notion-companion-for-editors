@@ -1,6 +1,6 @@
 'use strict';
 
-// Token holder, one token per account (Notion workspaces, Google accounts…).
+// Token holder, one token per account (one per Notion workspace).
 //
 // The actual secure storage is provided by each host:
 //   Resolve (Electron): safeStorage — macOS Keychain / Windows DPAPI
