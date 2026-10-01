@@ -1,12 +1,16 @@
 # Changelog
 
-## Non publié
+## 0.3.0-beta.1
+
+Pré-release : nouveautés vérifiées par les tests automatiques, pas encore avec la vraie API Notion ni dans Resolve / Premiere. Points à tester : [docs/STATUS.md](docs/STATUS.md).
 
 - **Modifier la page depuis le panneau** : cocher / décocher les to-do ; en mode édition (crayon), modifier le texte d'un bloc et supprimer des blocs (corbeille Notion, avec confirmation). La mise en forme hors du passage modifié est conservée. En cas de refus de Notion, la modification est annulée à l'écran.
 - **1 à 4 pages par projet**, affichées en onglets ; l'onglet actif est mémorisé par projet.
 - **Plusieurs comptes Notion** (un token par workspace) ; chaque page retient son compte. Le token de la v0.2 devient le compte par défaut, sans rien ressaisir.
 - Flèches des titres dépliables alignées sur le texte du titre.
 - Associations migrées automatiquement au format v3.
+
+**Installation** : comme pour la 0.2.0 (archive de votre système, puis « Installer pour DaVinci Resolve » et/ou « Installer pour Premiere Pro », voir le README). Les associations et le token de la 0.2 sont repris tels quels.
 
 ## 0.2.0
 

@@ -1,6 +1,6 @@
 # État du projet
 
-*Mis à jour le 1er octobre 2026 — version 0.2.0 + changements non publiés (édition, onglets, plusieurs comptes).*
+*Mis à jour le 1er octobre 2026 — version 0.3.0-beta.1 (pré-release : édition, onglets, plusieurs comptes).*
 
 Ce document sépare ce qui a été **vérifié en conditions réelles**, ce qui ne l'a été **que par des tests automatiques**, et ce qui **reste à tester**. Il sert aussi de liste des points à revoir ensemble (interface, comportements).
 
@@ -105,7 +105,7 @@ Au moment de la publication, les journaux ne montraient encore ni recherche ni a
 ## Prochaines étapes prévues
 
 - **UI / UX** : passe de design à faire ensemble (voir les points ci-dessus).
-- **Tests réels** des nouveautés (liste ci-dessus), puis publication d'une 0.3.0.
+- **Tests réels** de la 0.3.0-beta.1 (liste ci-dessus), puis publication de la 0.3.0.
 - Ajout de blocs depuis le panneau (nouvelle ligne, nouvelle to-do).
 
 ## Évolutions envisagées
