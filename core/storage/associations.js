@@ -1,10 +1,10 @@
 'use strict';
 
-// Editing project  <->  Notion page associations.
+// Editing project  <->  pages associations (1 to MAX_PAGES pages per project, shown as tabs).
 //
-// File format (schemaVersion 2):
+// File format (schemaVersion 3):
 // {
-//   "schemaVersion": 2,
+//   "schemaVersion": 3,
 //   "associations": {
 //     "<identity key>": {
 //       "key": "uid:…" | "name:…" (Resolve fallback) | "path:…" (Premiere fallback),
@@ -12,8 +12,12 @@
 //       "projectUid": "…" | null,
 //       "projectName": "Mon documentaire",
 //       "location": { "key": "Disk|Local Database" | "/…/Mon documentaire.prproj", "label": "…" },
-//       "notionPageId": "…", "notionPageTitle": "…", "notionPageUrl": "…",
-//       "notionPageIcon": { "type": "emoji", "emoji": "🎬" } | null,
+//       "pages": [                                   1..MAX_PAGES, in tab order
+//         { "source": "notion", "id": "…", "title": "…", "url": "…", "icon": { … } | null, "account": "<account id>" | null }
+//       ],
+//       "activePage": "<id of the tab shown>",
+//       "notionPageId", "notionPageTitle", "notionPageUrl", "notionPageIcon":
+//           copy of the first Notion page, kept so that an older plugin version can still read the file,
 //       "createdAt": "ISO", "updatedAt": "ISO"
 //     }
 //   }
@@ -29,7 +33,31 @@
 const { JsonStore } = require('./jsonStore');
 const { compatibleLocation } = require('../identity');
 
-const VERSION = 2;
+const VERSION = 3;
+const MAX_PAGES = require('../constants').MAX_PAGES_PER_PROJECT;
+
+/** Page reference as stored: only known fields, Notion by default. */
+function pageRef(page, account) {
+    return {
+        source: page.source || 'notion',
+        id: page.id,
+        title: page.title || '',
+        url: page.url || null,
+        icon: page.icon || null,
+        account: account !== undefined ? account : (page.account || null),
+    };
+}
+
+// Keeps the v2 fields (first Notion page) in sync with `pages`.
+function mirrorLegacy(record) {
+    const first = (record.pages || []).find((p) => p.source === 'notion') || null;
+    record.notionPageId = first ? first.id : null;
+    record.notionPageTitle = first ? first.title : null;
+    record.notionPageUrl = first ? first.url : null;
+    record.notionPageIcon = first ? first.icon : null;
+    if (!record.pages.some((p) => p.id === record.activePage)) record.activePage = record.pages[0] ? record.pages[0].id : null;
+    return record;
+}
 
 const migrations = {
     // v0 -> v1: early flat map { key: record } without wrapper.
@@ -63,6 +91,18 @@ const migrations = {
                 createdAt: a.createdAt || new Date().toISOString(),
                 updatedAt: a.updatedAt || new Date().toISOString(),
             };
+        }
+        return { associations };
+    },
+    // v2 -> v3: one page -> list of pages (tabs).
+    3: (data) => {
+        const associations = {};
+        for (const [k, a] of Object.entries(data.associations || {})) {
+            if (!a || typeof a !== 'object') continue;
+            const pages = Array.isArray(a.pages) ? a.pages.filter((p) => p && p.id).map((p) => pageRef(p))
+                : a.notionPageId ? [pageRef({ id: a.notionPageId, title: a.notionPageTitle, url: a.notionPageUrl, icon: a.notionPageIcon })] : [];
+            if (!pages.length) continue;
+            associations[k] = mirrorLegacy({ ...a, pages, activePage: a.activePage || pages[0].id });
         }
         return { associations };
     },
@@ -179,52 +219,101 @@ class AssociationStore {
         return next;
     }
 
-    /** Create or replace the association for the given project identity. */
-    set(identity, page) {
+    /** Create the association for the given project identity (one page), replacing any previous one. */
+    set(identity, page, { account } = {}) {
         const now = new Date().toISOString();
         const existing = this._all()[identity.key];
-        const record = {
+        const ref = pageRef(page, account);
+        const record = mirrorLegacy({
             key: identity.key,
             host: identity.host,
             projectUid: identity.uid || null,
             projectName: identity.name,
             location: { key: identity.location.key, label: identity.location.label },
-            notionPageId: page.id,
-            notionPageTitle: page.title,
-            notionPageUrl: page.url,
-            notionPageIcon: page.icon || null,
+            pages: [ref],
+            activePage: ref.id,
             createdAt: existing ? existing.createdAt : now,
             updatedAt: now,
-        };
+        });
         this.store.update(() => { this._all()[identity.key] = record; });
         return record;
     }
 
-    /** Change the Notion page of an existing association (by key). */
-    setPage(key, page) {
+    _mutate(key, fn) {
         const record = this.get(key);
-        if (!record) return null;
+        if (!record) throw Object.assign(new Error('unknown association'), { code: 'not_found' });
+        let result;
         this.store.update(() => {
-            record.notionPageId = page.id;
-            record.notionPageTitle = page.title;
-            record.notionPageUrl = page.url;
-            record.notionPageIcon = page.icon || null;
+            result = fn(record);
             record.updatedAt = new Date().toISOString();
+            mirrorLegacy(record);
         });
-        return record;
+        return result === undefined ? record : result;
     }
 
-    /** Keep the stored title/url/icon in sync when the page is renamed in Notion. */
+    /** Adds a page as a new tab (and shows it). */
+    addPage(key, page, { account } = {}) {
+        return this._mutate(key, (record) => {
+            if (record.pages.some((p) => p.id === page.id)) throw Object.assign(new Error('already linked'), { code: 'page_already_linked' });
+            if (record.pages.length >= MAX_PAGES) throw Object.assign(new Error('too many pages'), { code: 'too_many_pages' });
+            const ref = pageRef(page, account);
+            record.pages.push(ref);
+            record.activePage = ref.id;
+        });
+    }
+
+    /** Replaces one tab's page (defaults to the active tab), keeping its position. */
+    replacePage(key, page, { account, oldId } = {}) {
+        return this._mutate(key, (record) => {
+            const target = oldId || record.activePage;
+            const i = Math.max(0, record.pages.findIndex((p) => p.id === target));
+            const dup = record.pages.findIndex((p) => p.id === page.id);
+            if (dup !== -1 && dup !== i) throw Object.assign(new Error('already linked'), { code: 'page_already_linked' });
+            const ref = pageRef(page, account);
+            record.pages[i] = ref;
+            record.activePage = ref.id;
+        });
+    }
+
+    /** Removes a tab. The last page cannot be removed (remove the association instead). */
+    removePage(key, pageId) {
+        return this._mutate(key, (record) => {
+            if (record.pages.length <= 1) throw Object.assign(new Error('last page'), { code: 'last_page' });
+            const i = record.pages.findIndex((p) => p.id === pageId);
+            if (i === -1) return;
+            record.pages.splice(i, 1);
+            if (record.activePage === pageId) record.activePage = record.pages[Math.min(i, record.pages.length - 1)].id;
+        });
+    }
+
+    setActivePage(key, pageId) {
+        const record = this.get(key);
+        if (!record || record.activePage === pageId || !record.pages.some((p) => p.id === pageId)) return record;
+        return this._mutate(key, (r) => { r.activePage = pageId; });
+    }
+
+    /** Change the page of an existing association (by key): replaces its active tab. */
+    setPage(key, page, opts = {}) {
+        if (!this.get(key)) return null;
+        return this.replacePage(key, page, opts);
+    }
+
+    /** Keep the stored title/url/icon in sync when a page is renamed. */
     refreshPageInfo(pageId, page) {
-        const changed = Object.values(this._all()).filter((a) => a.notionPageId === pageId
-            && (a.notionPageTitle !== page.title || a.notionPageUrl !== page.url
-                || JSON.stringify(a.notionPageIcon || null) !== JSON.stringify(page.icon || null)));
-        if (!changed.length) return;
+        const stale = [];
+        for (const a of Object.values(this._all())) {
+            for (const p of a.pages || []) {
+                if (p.id === pageId && (p.title !== page.title || p.url !== page.url
+                    || JSON.stringify(p.icon || null) !== JSON.stringify(page.icon || null))) stale.push([a, p]);
+            }
+        }
+        if (!stale.length) return;
         this.store.update(() => {
-            for (const a of changed) {
-                a.notionPageTitle = page.title;
-                a.notionPageUrl = page.url;
-                a.notionPageIcon = page.icon || null;
+            for (const [a, p] of stale) {
+                p.title = page.title;
+                p.url = page.url;
+                p.icon = page.icon || null;
+                mirrorLegacy(a);
             }
         });
     }
@@ -236,4 +325,4 @@ class AssociationStore {
     }
 }
 
-module.exports = { AssociationStore };
+module.exports = { AssociationStore, MAX_PAGES };

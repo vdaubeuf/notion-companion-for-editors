@@ -6,6 +6,8 @@ const { h, clear, setChildren, button, findAttr, relativeTime, formatDate } = re
 const { icon, pageIcon } = require('./icons');
 const { renderBlocks } = require('./blocks');
 
+const MAX_TABS = 4;
+
 class PageView {
     constructor(actions) {
         this.actions = actions;
@@ -68,7 +70,7 @@ class PageView {
                 h('div', null,
                     'Le projet « ', h('b', { text: s.projectName }), ' »',
                     s.location ? ` (${s.location})` : '',
-                    ' est déjà associé à la page ', h('b', { text: s.pageTitle }),
+                    s.pageCount > 1 ? ' est déjà associé aux pages ' : ' est déjà associé à la page ', h('b', { text: s.pageTitle }),
                     '. S’agit-il du même projet (déplacé, copié ou réimporté) ?'),
                 h('div', { class: 'banner-actions' },
                     button({ class: 'btn small primary', onClick: a.adoptSuggestion }, 'Utiliser cette page'),
@@ -94,12 +96,29 @@ class PageView {
         if (p.fromCache && p.savedAt) status.push(h('span', { class: 'status-item cache', title: `Enregistré le ${formatDate(p.savedAt, true)}` }, icon('cloudOff'), `Cache · ${relativeTime(p.savedAt)}`));
         else if (!p.refreshing && p.savedAt) status.push(h('span', { class: 'status-item', text: `À jour · ${relativeTime(p.savedAt)}` }));
 
+        const pages = assoc.pages || [];
+        const canAdd = pages.length < MAX_TABS;
+        const closeMenu = (fn) => () => { this.menuOpen = false; fn(); };
         const menu = this.menuOpen ? h('div', { class: 'menu' },
-            button({ class: 'menu-item', onClick: () => { this.menuOpen = false; a.openSearch(); } }, icon('swap'), 'Changer de page'),
-            button({ class: 'menu-item danger', onClick: () => { this.menuOpen = false; a.dissociate(); } }, icon('unlink'), 'Dissocier')) : null;
+            canAdd ? button({ class: 'menu-item', onClick: closeMenu(a.openAddPage) }, icon('plus'), `Ajouter une page (onglet ${pages.length + 1}/${MAX_TABS})`) : null,
+            button({ class: 'menu-item', onClick: closeMenu(a.openSearch) }, icon('swap'), pages.length > 1 ? 'Remplacer cet onglet' : 'Changer de page'),
+            pages.length > 1 ? button({ class: 'menu-item', onClick: closeMenu(() => a.removePage(assoc.pageId)) }, icon('x'), 'Retirer cet onglet') : null,
+            h('div', { class: 'menu-sep' }),
+            button({ class: 'menu-item danger', onClick: closeMenu(a.dissociate) }, icon('unlink'), pages.length > 1 ? 'Dissocier le projet (tous les onglets)' : 'Dissocier')) : null;
 
-        items.push(h('div', { class: 'page-bar' },
-            h('div', { class: 'page-bar-title', title: assoc.title }, pageIcon(assoc.icon), h('span', { class: 'ellipsis', text: assoc.title })),
+        // One page: its title. Several: one tab per page (the content shows the page title anyway).
+        const titleArea = pages.length > 1
+            ? h('div', { class: 'tabs', role: 'tablist' },
+                pages.map((pg) => button({
+                    class: `tab ${pg.id === assoc.pageId ? 'active' : ''}`.trim(), role: 'tab', title: pg.title,
+                    'aria-selected': pg.id === assoc.pageId ? 'true' : 'false',
+                    onClick: () => { if (pg.id !== assoc.pageId) a.selectPage(pg.id); },
+                }, pageIcon(pg.icon), h('span', { class: 'tab-label', text: pg.title || 'Sans titre' }))),
+                canAdd ? button({ class: 'tab-add', title: 'Ajouter une page', 'aria-label': 'Ajouter une page', onClick: a.openAddPage }, icon('plus')) : null)
+            : h('div', { class: 'page-bar-title', title: assoc.title }, pageIcon(assoc.icon), h('span', { class: 'ellipsis', text: assoc.title }));
+
+        items.push(h('div', { class: `page-bar ${pages.length > 1 ? 'with-tabs' : ''}`.trim() },
+            titleArea,
             h('div', { class: 'page-bar-actions' },
                 this._canEdit(state) ? button({
                     class: `icon-btn ${this.editMode ? 'active' : ''}`.trim(),
@@ -235,6 +254,7 @@ class PageView {
         const scrollTop = this.scroll.scrollTop;
         if (!samePage) {
             this.openToggles.clear();
+            this.menuOpen = false;
             if (this.editMode) { this.editMode = false; this._renderTop(state); }
             this.edit.editingId = null;
             this.edit.draft = null;

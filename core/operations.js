@@ -73,6 +73,7 @@ const OPERATION_NAMES = [
     'associate', 'associateForKey', 'adoptSuggestion', 'dismissSuggestion', 'dissociate', 'removeAssociation', 'listAssociations',
     'clearCache', 'cacheStats',
     'setTodo', 'editText', 'deleteBlock',
+    'addPage', 'removePage', 'selectPage', 'removePageForKey',
 ];
 
 function createOperations({ controller, actions }) {
@@ -99,6 +100,10 @@ function createOperations({ controller, actions }) {
 
         associate: (pageId) => controller.associate(v.pageId(pageId)),
         associateForKey: (key, pageId) => controller.associateForKey(v.assocKey(key), v.pageId(pageId)),
+        addPage: (pageId) => controller.addPage(v.pageId(pageId)),
+        removePage: (pageId) => controller.removePage(v.pageId(pageId)),
+        selectPage: (pageId) => controller.selectPage(v.pageId(pageId)),
+        removePageForKey: (key, pageId) => controller.removePageForKey(v.assocKey(key), v.pageId(pageId)),
         adoptSuggestion: () => controller.adoptSuggestion(),
         dismissSuggestion: () => controller.dismissSuggestion(),
         dissociate: () => controller.dissociate(),

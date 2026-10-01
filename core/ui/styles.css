@@ -98,8 +98,8 @@ button { font: inherit; color: inherit; }
 .btn.danger { color: var(--err); }
 .btn.danger-solid { background: var(--err); border-color: var(--err); color: #fff; }
 .btn.wide { width: 100%; }
-body.narrow .page-bar .btn .label { display: none; }
-body.narrow .page-bar .btn { padding: 0 6px; }
+body.narrow .page-bar .btn .label, .page-bar.with-tabs .btn .label { display: none; }
+body.narrow .page-bar .btn, .page-bar.with-tabs .btn { padding: 0 6px; }
 
 /* ---------- main page view ---------- */
 .page-view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -109,6 +109,25 @@ body.narrow .page-bar .btn { padding: 0 6px; }
 .page-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--border-soft); background: var(--bg); }
 .page-bar-title { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; font-weight: 600; color: var(--text); }
 .page-bar-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.page-bar.with-tabs { padding-left: 6px; }
+
+/* Tabs: one per page of the project (1 to 4). */
+.tabs { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
+.tab {
+    display: flex; align-items: center; gap: 5px; flex: 0 1 auto; min-width: 34px; max-width: 160px;
+    height: 26px; padding: 0 8px 0 6px; border-radius: var(--radius); border: 1px solid transparent;
+    color: var(--muted); cursor: pointer; outline: none; transition: background 0.12s, color 0.12s;
+}
+.tab:hover { background: var(--panel-2); color: var(--text); }
+.tab.active { background: var(--panel); border-color: var(--border); color: var(--text-strong); font-weight: 600; }
+.tab:focus-visible, .tab-add:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.tab .page-icon { width: 16px; height: 16px; font-size: 13px; }
+.tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tab-add { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; border-radius: var(--radius); color: var(--muted); cursor: pointer; outline: none; }
+.tab-add:hover { background: var(--panel-2); color: var(--text-strong); }
+.tab-add .icon { width: 13px; height: 13px; }
+body.narrow .tab { max-width: 110px; padding: 0 6px 0 4px; }
+body.narrow .tab:not(.active) .tab-label { display: none; }
 .page-status { display: flex; gap: 10px; padding: 3px 12px; font-size: 10.5px; color: var(--muted); border-bottom: 1px solid var(--border-soft); }
 .status-item { display: inline-flex; align-items: center; gap: 5px; }
 .status-item.cache { color: var(--warn); }
@@ -126,6 +145,7 @@ body.narrow .page-bar .btn { padding: 0 6px; }
 .menu-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
 .menu-item:hover { background: var(--panel-2); }
 .menu-item.danger { color: var(--err); }
+.menu-sep { height: 1px; margin: 4px 2px; background: var(--border); }
 @keyframes fadein { from { opacity: 0; transform: translateY(-2px); } }
 
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 42px 20px; text-align: center; }
@@ -363,7 +383,12 @@ span[class*="bg-"] { border-radius: 3px; padding: 0 2px; }
 .assoc.current { background: rgba(227, 132, 60, 0.05); }
 .assoc-main { flex: 1; min-width: 0; }
 .assoc-project { font-weight: 600; color: var(--text-strong); display: flex; align-items: center; gap: 6px; }
-.assoc-page { display: flex; align-items: center; gap: 5px; color: var(--text); margin-top: 1px; }
+.assoc-pages { margin-top: 1px; }
+.assoc-page { display: flex; align-items: center; gap: 5px; color: var(--text); min-height: 20px; }
+.assoc-page .ellipsis { flex: 0 1 auto; }
+.icon-btn.tiny { width: 18px; height: 18px; flex: none; opacity: 0; }
+.icon-btn.tiny .icon { width: 11px; height: 11px; }
+.assoc-page:hover .icon-btn.tiny, .icon-btn.tiny:focus { opacity: 1; }
 .assoc-page .arrow { color: var(--faint); }
 .assoc-meta { font-size: 10.5px; color: var(--faint); margin-top: 1px; }
 .assoc-actions { display: flex; gap: 4px; flex: none; }

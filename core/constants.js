@@ -21,5 +21,8 @@ module.exports = Object.freeze({
 
     CACHE_MAX_PAGES: 60,
 
+    // Pages (tabs) per editing project.
+    MAX_PAGES_PER_PROJECT: 4,
+
     TOKEN_HELP_URL: 'https://developers.notion.com/guides/get-started/personal-access-tokens',
 });

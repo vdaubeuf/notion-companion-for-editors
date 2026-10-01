@@ -15,14 +15,25 @@ const { normalizeBlock } = require('./notion/blocks');
 const edit = require('./notion/edit');
 const C = require('./constants');
 
+function publicPage(p) {
+    return { id: p.id, source: p.source || 'notion', title: p.title, url: p.url, icon: p.icon || null, account: p.account || null };
+}
+
+// UI view of an association: every tab, plus the active page's fields at top level.
 function publicAssociation(a, matchedBy) {
     if (!a) return null;
+    const pages = (a.pages || []).map(publicPage);
+    const active = pages.find((p) => p.id === a.activePage) || pages[0] || {};
     return {
         key: a.key,
-        pageId: a.notionPageId,
-        title: a.notionPageTitle,
-        url: a.notionPageUrl,
-        icon: a.notionPageIcon || null,
+        pages,
+        activeId: active.id || null,
+        pageId: active.id || null,
+        source: active.source || 'notion',
+        account: active.account || null,
+        title: active.title,
+        url: active.url,
+        icon: active.icon || null,
         matchedBy: matchedBy || null,
     };
 }
@@ -120,13 +131,13 @@ class Controller extends Emitter {
             key: suggestion.key,
             projectName: suggestion.projectName,
             location: suggestion.location ? suggestion.location.label : null,
-            pageTitle: suggestion.notionPageTitle,
-            pageId: suggestion.notionPageId,
+            pageTitle: (suggestion.pages || []).map((p) => p.title).join(', '),
+            pageCount: (suggestion.pages || []).length,
         } : null;
         this._set({ association: publicAssociation(match, matchedBy), suggestion: sugg });
 
         if (match) {
-            this._loadPage(match.notionPageId);
+            this._loadPage(this.state.association.pageId);
         } else {
             this._setPage({ status: 'none', pageId: null, error: null, fromCache: false, refreshing: false });
         }
@@ -190,10 +201,7 @@ class Controller extends Emitter {
             this.lastCheck = Date.now();
             this.lastEditedTime = result.page.lastEditedTime;
             this.associations.refreshPageInfo(pageId, result.page);
-            const assoc = this.state.association;
-            if (assoc && assoc.pageId === pageId) {
-                this._set({ association: { ...assoc, title: result.page.title, url: result.page.url, icon: result.page.icon } });
-            }
+            this._syncAssociation();
             if (this.state.notion.status !== 'ok') this._set({ notion: { ...this.state.notion, status: 'ok' } });
             this._setPage({ status: 'ready', fromCache: false, savedAt: new Date().toISOString(), refreshing: false, error: null, truncated: result.truncated });
             // The page was edited from the panel while it was loading: the loaded tree may predate the edit.
@@ -298,24 +306,88 @@ class Controller extends Emitter {
         return out;
     }
 
+    // Re-reads the current association from the store into the UI state.
+    _syncAssociation() {
+        const a = this.state.association;
+        if (!a) return;
+        const record = this.associations.get(a.key);
+        this._set({ association: record ? publicAssociation(record, a.matchedBy) : null });
+    }
+
+    _requireAssociation() {
+        const a = this.state.association;
+        if (!a) throw Object.assign(new Error('no association'), { code: 'not_found' });
+        return a;
+    }
+
+    _showActive() {
+        this._syncAssociation();
+        const a = this.state.association;
+        if (!a) return this._applyAssociation();
+        if (this.content && this.content.page && this.content.page.id === a.pageId) return undefined;
+        this._setContent(null);
+        this.lastEditedTime = null;
+        return this._loadPage(a.pageId);
+    }
+
+    /** No association yet: creates it. Otherwise: replaces the page of the active tab. */
     async associate(pageId) {
         if (!this.identity) throw Object.assign(new Error('no project'), { code: 'no_project' });
         const page = await retrievePage(this.client, pageId);
-        const record = this.associations.set(this.identity, page);
-        this.log.info(`Associated "${this.identity.name}" -> page ${page.id}`);
-        this._set({ association: publicAssociation(record, 'new'), suggestion: null });
-        this._setContent(null);
-        this._loadPage(page.id);
+        const a = this.state.association;
+        if (a && this.associations.get(a.key)) {
+            this.associations.replacePage(a.key, page);
+            this.log.info(`"${this.identity.name}": tab replaced by page ${page.id}`);
+        } else {
+            const record = this.associations.set(this.identity, page);
+            this.log.info(`Associated "${this.identity.name}" -> page ${page.id}`);
+            this._set({ association: publicAssociation(record, 'new'), suggestion: null });
+        }
+        this._showActive();
+        return this.state.association;
+    }
+
+    /** Adds a page as a new tab of the current project and shows it. */
+    async addPage(pageId) {
+        const a = this._requireAssociation();
+        const record = this.associations.get(a.key);
+        if (record && record.pages.length >= C.MAX_PAGES_PER_PROJECT) throw Object.assign(new Error('too many pages'), { code: 'too_many_pages' });
+        const page = await retrievePage(this.client, pageId);
+        this.associations.addPage(a.key, page);
+        this.log.info(`"${a.key}": page ${page.id} added as a tab`);
+        this._showActive();
+        return this.state.association;
+    }
+
+    removePage(pageId) {
+        const a = this._requireAssociation();
+        this.associations.removePage(a.key, pageId);
+        this._showActive();
+        return this.state.association;
+    }
+
+    selectPage(pageId) {
+        const a = this._requireAssociation();
+        if (!a.pages.some((p) => p.id === pageId)) throw Object.assign(new Error('unknown tab'), { code: 'not_found' });
+        this.associations.setActivePage(a.key, pageId);
+        this._showActive();
+        return this.state.association;
+    }
+
+    /** Associations view: adds a page to any association (current project or not). */
+    async associateForKey(key, pageId) {
+        if (this.state.association && key === this.state.association.key) return this.addPage(pageId);
+        const page = await retrievePage(this.client, pageId);
+        const record = this.associations.addPage(key, page);
+        this._set({});
         return publicAssociation(record);
     }
 
-    async associateForKey(key, pageId) {
-        if (key === this.currentKey) return this.associate(pageId);
-        const page = await retrievePage(this.client, pageId);
-        const record = this.associations.setPage(key, page);
-        if (!record) throw Object.assign(new Error('unknown association'), { code: 'not_found' });
+    removePageForKey(key, pageId) {
+        if (this.state.association && key === this.state.association.key) return this.removePage(pageId);
+        this.associations.removePage(key, pageId);
         this._set({});
-        return publicAssociation(record);
+        return true;
     }
 
     adoptSuggestion() {
@@ -323,12 +395,13 @@ class Controller extends Emitter {
         if (!s || !this.identity) return null;
         const src = this.associations.get(s.key);
         if (!src) return null;
-        const record = this.associations.set(this.identity, {
-            id: src.notionPageId, title: src.notionPageTitle, url: src.notionPageUrl, icon: src.notionPageIcon,
-        });
-        this._set({ association: publicAssociation(record, 'new'), suggestion: null });
-        this._loadPage(record.notionPageId);
-        return publicAssociation(record);
+        const [first, ...rest] = src.pages;
+        const record = this.associations.set(this.identity, first);
+        for (const p of rest) this.associations.addPage(record.key, p);
+        this.associations.setActivePage(record.key, src.activePage);
+        this._set({ association: publicAssociation(this.associations.get(record.key), 'new'), suggestion: null });
+        this._loadPage(this.state.association.pageId);
+        return this.state.association;
     }
 
     dismissSuggestion() {
@@ -356,9 +429,7 @@ class Controller extends Emitter {
             projectName: a.projectName,
             location: a.location ? a.location.label : null,
             strategy: a.projectUid ? 'uid' : 'fallback',
-            pageId: a.notionPageId,
-            pageTitle: a.notionPageTitle,
-            pageIcon: a.notionPageIcon || null,
+            pages: (a.pages || []).map(publicPage),
             isCurrent: a.key === (this.state.association && this.state.association.key),
             updatedAt: a.updatedAt,
         }));
