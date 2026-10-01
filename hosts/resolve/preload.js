@@ -12,6 +12,7 @@ const OPERATIONS = [
     'associate', 'associateForKey', 'adoptSuggestion', 'dismissSuggestion', 'dissociate', 'removeAssociation', 'listAssociations',
     'clearCache', 'cacheStats',
     'setTodo', 'editText', 'deleteBlock',
+    'addPage', 'removePage', 'selectPage', 'removePageForKey',
 ];
 
 function subscribe(channel, callback) {

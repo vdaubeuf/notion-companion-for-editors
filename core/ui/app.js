@@ -57,6 +57,11 @@ const actions = {
     },
     openSettings: () => showView('settings'),
     openSearch: () => showView('search', { mode: 'current' }),
+    openAddPage: () => showView('search', { mode: 'add' }),
+    selectPage: (pageId) => call(api.selectPage, pageId).catch((e) => toast(e.message, 'error')),
+    removePage: async (pageId) => {
+        try { await call(api.removePage, pageId); toast('Onglet retiré'); } catch (e) { toast(e.message, 'error'); }
+    },
     openInNotion: () => call(api.openInNotion).catch((e) => toast(e.message, 'error')),
     openExternal: (url) => call(api.openExternal, url).catch((e) => toast(e.message, 'error')),
     dissociate: async () => {
@@ -92,19 +97,28 @@ function showView(view, ctx = {}) {
         pageView.update(ui.state, ui.content, true);
     } else if (view === 'search') {
         const forKey = ctx.mode === 'key';
+        const adding = ctx.mode === 'add';
         const project = ui.state.host.project;
         const projectName = forKey ? ctx.projectName : (project && project.name);
+        const assoc = ui.state.association;
+        let heading = 'Associer une page Notion';
+        if (forKey || adding) heading = 'Ajouter une page au projet';
+        else if (assoc) heading = assoc.pages && assoc.pages.length > 1 ? 'Remplacer cet onglet' : 'Changer de page';
         const v = new SearchView({
             api,
             call,
-            heading: ui.state.association && !forKey ? 'Changer de page' : 'Associer une page Notion',
+            heading,
             subheading: projectName ? `Projet ${ui.state.host.name} : ${projectName}` : null,
             onClose: () => showView(forKey ? 'associations' : 'main'),
             onPick: async (page) => {
                 if (forKey) {
                     await call(api.associateForKey, ctx.key, page.id);
-                    toast('Association mise à jour');
+                    toast('Page ajoutée');
                     showView('associations');
+                } else if (adding) {
+                    await call(api.addPage, page.id);
+                    toast('Page ajoutée en onglet');
+                    showView('main');
                 } else {
                     await call(api.associate, page.id);
                     toast('Association enregistrée');
@@ -129,7 +143,7 @@ function showView(view, ctx = {}) {
         const v = new AssociationsView({
             api, call, toast,
             onClose: () => showView('settings'),
-            onChangePage: (a) => showView('search', { mode: 'key', key: a.key, projectName: a.projectName }),
+            onAddPage: (a) => showView('search', { mode: 'key', key: a.key, projectName: a.projectName }),
         });
         ui.viewObj = v;
         setChildren(bodyEl, v.el);

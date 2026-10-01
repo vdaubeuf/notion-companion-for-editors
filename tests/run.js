@@ -143,7 +143,7 @@ test('associations: setPage, refreshPageInfo, remove', async () => {
     assert.equal(s.count(), 0);
 });
 
-test('associations: migrates v1 (0.1.0 Resolve format) to v2 without losing data', async () => {
+test('associations: migrates v1 (0.1.0 Resolve format) to v3 without losing data', async () => {
     const v1 = {
         schemaVersion: 1,
         associations: {
@@ -166,7 +166,10 @@ test('associations: migrates v1 (0.1.0 Resolve format) to v2 without losing data
     const r = s.find(resolveIdentity({ name: 'Documentaire Studio', uid: 'a1b2c3d4', database: { DbType: 'PostgreSQL', DbName: 'db_studio' } }));
     assert.equal(r.matchedBy, 'uid');
     await s.flush();
-    assert.equal(JSON.parse(backend.files['associations.json']).schemaVersion, 2);
+    const saved = JSON.parse(backend.files['associations.json']);
+    assert.equal(saved.schemaVersion, 3);
+    assert.deepEqual(saved.associations['uid:a1b2c3d4'].pages, [{ source: 'notion', id: PID, title: 'Notes du documentaire', url: 'https://www.notion.so/x', icon: null, account: null }]);
+    assert.equal(saved.associations['uid:a1b2c3d4'].activePage, PID);
 });
 
 test('associations: migrates v0 flat format', async () => {
@@ -174,6 +177,37 @@ test('associations: migrates v0 flat format', async () => {
     const s = await freshStore(backend);
     assert.equal(s.count(), 1);
     assert.equal(s.get('uid:X').projectName, 'Mon documentaire');
+});
+
+test('associations: up to 4 pages per project, active tab, legacy fields mirror the first page', async () => {
+    const backend = memoryBackend();
+    const s = await freshStore(backend);
+    const P = (n) => `${String(n).repeat(8)}-1111-2222-3333-444455556666`;
+    s.set(resolveIdentity({ name: 'P', uid: 'U1', database: DB }), page(P(1), 'Un'));
+    s.addPage('uid:U1', page(P(2), 'Deux'));
+    s.addPage('uid:U1', page(P(3), 'Trois'));
+    s.addPage('uid:U1', page(P(4), 'Quatre'));
+    assert.throws(() => s.addPage('uid:U1', page(P(5), 'Cinq')), (e) => e.code === 'too_many_pages');
+    assert.throws(() => s.addPage('uid:U1', page(P(2), 'Deux')), (e) => e.code === 'page_already_linked');
+    let a = s.get('uid:U1');
+    assert.equal(a.pages.length, 4);
+    assert.equal(a.activePage, P(4));
+    s.setActivePage('uid:U1', P(2));
+    s.replacePage('uid:U1', page(P(6), 'Six'));
+    a = s.get('uid:U1');
+    assert.deepEqual(a.pages.map((p) => p.title), ['Un', 'Six', 'Trois', 'Quatre']);
+    assert.equal(a.activePage, P(6));
+    s.removePage('uid:U1', P(6));
+    assert.equal(s.get('uid:U1').activePage, P(3));
+    s.removePage('uid:U1', P(1));
+    assert.equal(s.get('uid:U1').notionPageId, P(3));
+    s.refreshPageInfo(P(4), page(P(4), 'Quatre bis'));
+    assert.equal(s.get('uid:U1').pages[1].title, 'Quatre bis');
+    s.removePage('uid:U1', P(4));
+    assert.throws(() => s.removePage('uid:U1', P(3)), (e) => e.code === 'last_page');
+    await s.flush();
+    const again = await freshStore(backend);
+    assert.equal(again.get('uid:U1').pages.length, 1);
 });
 
 // ---------------------------------------------------------------- json store / cache / fs backend
