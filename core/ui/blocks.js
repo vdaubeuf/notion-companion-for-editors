@@ -145,7 +145,7 @@ function renderBlock(node, ctx) {
             const level = Number(node.type.slice(-1));
             const hd = h('div', { class: `n-h${level} ${cc}`.trim(), role: 'heading', 'aria-level': String(level) }, renderRich(node.rich));
             if (node.toggleable) {
-                return toggle(node, ctx, hd, () => node.children.length ? renderBlocks(node.children, ctx) : (pendingChildren(node, ctx) || ''), 'heading-toggle');
+                return toggle(node, ctx, hd, () => node.children.length ? renderBlocks(node.children, ctx) : (pendingChildren(node, ctx) || ''), `heading-toggle lvl-${level}`);
             }
             return hd;
         }
