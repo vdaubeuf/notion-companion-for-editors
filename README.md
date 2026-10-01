@@ -6,10 +6,10 @@ Panneau pour **DaVinci Resolve Studio** et **Adobe Premiere Pro** qui associe un
 
 ```
 Projet A  →  Page Notion A
-Projet B  →  Page Notion B
+Projet B  →  Script B  |  Planning B  |  Dérushage B     (onglets)
 ```
 
-L'association se fait une fois. Ensuite, quand vous changez de projet dans le logiciel, le panneau charge la page correspondante.
+L'association se fait une fois. Ensuite, quand vous changez de projet dans le logiciel, le panneau charge les pages correspondantes, en onglets quand il y en a plusieurs. Les pages peuvent venir de plusieurs workspaces Notion (un compte par workspace).
 
 | | DaVinci Resolve Studio | Premiere Pro |
 |---|---|---|
@@ -47,7 +47,7 @@ L'association se fait une fois. Ensuite, quand vous changez de projet dans le lo
 
 ## 1. Installation
 
-Téléchargez la dernière version depuis la page **Releases** du dépôt :
+Téléchargez la dernière version depuis la page **Releases** du dépôt (les versions marquées **Pre-release**, comme `0.3.0-beta.1`, sont des versions d'essai) :
 
 | Fichier | Contenu |
 |---|---|
@@ -314,9 +314,12 @@ tail -f ~/Library/Application\ Support/Notion\ Companion/logs/companion.log
 
 1. Changez `PLUGIN_VERSION` dans `core/constants.js` : c'est la seule source, recopiée dans tous les manifestes au build. Une version comme `0.3.0-beta.1` est publiée en **pré-release** (les manifestes reçoivent `0.3.0`).
 2. Ajoutez une section `## x.y.z` dans `CHANGELOG.md`.
-3. Commitez, puis poussez un tag : `git tag v0.3.0 && git push origin v0.3.0`.
+3. Commitez et fusionnez dans `main`.
+4. Créez le tag `vx.y.z` sur `main`, au choix :
+   - sur GitHub : **Releases → Draft a new release → Choose a tag** (nouveau tag `v0.3.0`, cible `main`) **→ Publish release** ;
+   - en ligne de commande : `git tag v0.3.0 && git push origin v0.3.0`.
 
-Le workflow GitHub Actions construit alors les archives macOS et Windows et le `.ccx`, puis publie la Release.
+Le workflow GitHub Actions vérifie que le tag correspond à `PLUGIN_VERSION`, construit les archives macOS et Windows et le `.ccx`, puis les ajoute à la Release (créée si besoin), avec la section du `CHANGELOG.md` comme notes. Un tag avec suffixe (`-beta.1`) est marqué pré-release.
 
 ## 10. Limitations connues
 
