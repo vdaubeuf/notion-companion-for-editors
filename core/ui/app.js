@@ -64,6 +64,16 @@ const actions = {
     },
     adoptSuggestion: () => call(api.adoptSuggestion).catch((e) => toast(e.message, 'error')),
     dismissSuggestion: () => call(api.dismissSuggestion).catch(() => {}),
+    setTodo: (blockId, checked) => call(api.setTodo, blockId, checked).catch((e) => toast(e.message, 'error')),
+    editText: async (blockId, text) => {
+        try {
+            const res = await call(api.editText, blockId, text);
+            if (res && !res.unchanged) toast('Modification enregistrée dans Notion');
+        } catch (e) { toast(e.message, 'error'); }
+    },
+    deleteBlock: async (blockId) => {
+        try { await call(api.deleteBlock, blockId); toast('Bloc supprimé (récupérable dans la corbeille Notion)'); } catch (e) { toast(e.message, 'error'); }
+    },
 };
 
 const pageView = new PageView(actions);

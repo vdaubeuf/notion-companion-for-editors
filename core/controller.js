@@ -11,6 +11,8 @@ const { Emitter } = require('./emitter');
 const { loadPageContent } = require('./notion/loader');
 const { searchPages, retrievePage, parentTitle } = require('./notion/pages');
 const { NotionError, toUserError } = require('./notion/errors');
+const { normalizeBlock } = require('./notion/blocks');
+const edit = require('./notion/edit');
 const C = require('./constants');
 
 function publicAssociation(a, matchedBy) {
@@ -45,6 +47,8 @@ class Controller extends Emitter {
         this.lastCheck = 0;
         this.lastEditedTime = null;
         this.parentMemo = new Map();
+        this.editSeq = 0;
+        this.pendingEdits = new Set();
 
         this.state = {
             host: { ...hostInfo, status: 'connecting', project: null, version: null, uidSupported: null },
@@ -165,6 +169,7 @@ class Controller extends Emitter {
             return;
         }
 
+        const editSeqAtStart = this.editSeq;
         try {
             const hadContent = !!this.content;
             const result = await loadPageContent(this.client, pageId, {
@@ -191,6 +196,8 @@ class Controller extends Emitter {
             }
             if (this.state.notion.status !== 'ok') this._set({ notion: { ...this.state.notion, status: 'ok' } });
             this._setPage({ status: 'ready', fromCache: false, savedAt: new Date().toISOString(), refreshing: false, error: null, truncated: result.truncated });
+            // The page was edited from the panel while it was loading: the loaded tree may predate the edit.
+            if (this.editSeq !== editSeqAtStart) this._loadPage(pageId, { preferNetwork: true });
         } catch (e) {
             if (loadId !== this.loadSeq || (e && e.code === 'cancelled')) return;
             this.log.warn(`Loading page ${pageId} failed`, e);
@@ -355,6 +362,98 @@ class Controller extends Emitter {
             isCurrent: a.key === (this.state.association && this.state.association.key),
             updatedAt: a.updatedAt,
         }));
+    }
+
+    // ---------- editing (write-back to Notion) ----------
+
+    _editTarget(blockId) {
+        const found = this.content && this.content.page ? edit.findNode(this.content.blocks, blockId) : null;
+        if (!found) throw new NotionError('not_found');
+        if (this.pendingEdits.has(blockId)) throw new NotionError('edit_busy');
+        return found;
+    }
+
+    // Re-emits the (mutated in place) tree under a new object so the UI re-renders, and refreshes the cache.
+    _contentChanged({ persist = false } = {}) {
+        const c = this.content;
+        this._setContent({ ...c });
+        if (persist && !c.partial) this.cache.put(c.page.id, { page: c.page, blocks: c.blocks, truncated: c.truncated });
+    }
+
+    _writeError(e) {
+        this._noteNotionError(e);
+        if (e && e.code === 'restricted') return new NotionError('write_denied');
+        if (e && e.code === 'validation') return new NotionError('write_rejected');
+        return e;
+    }
+
+    // Optimistic edit: apply locally, send, then keep Notion's version (or roll back on failure).
+    async _write(blockId, { apply, rollback, send }) {
+        this.pendingEdits.add(blockId);
+        this.editSeq += 1;
+        apply();
+        this._contentChanged();
+        try {
+            const res = await send();
+            this.lastCheck = Date.now();
+            return res;
+        } catch (e) {
+            this.log.warn(`Editing block ${blockId} failed`, e);
+            if (this.content) { rollback(); }
+            throw this._writeError(e);
+        } finally {
+            this.pendingEdits.delete(blockId);
+            if (this.content) this._contentChanged({ persist: true });
+        }
+    }
+
+    _applyServerBlock(node, raw) {
+        if (!raw || raw.object !== 'block') return;
+        const fresh = normalizeBlock(raw);
+        if (fresh.type !== node.type) return;
+        const { children, hasChildren } = node;
+        for (const k of Object.keys(node)) delete node[k];
+        Object.assign(node, fresh, { children, hasChildren });
+    }
+
+    async setTodo(blockId, checked) {
+        const { node } = this._editTarget(blockId);
+        if (node.type !== 'to_do') throw new NotionError('not_editable');
+        const before = node.checked;
+        await this._write(blockId, {
+            apply: () => { node.checked = checked; },
+            rollback: () => { node.checked = before; },
+            send: async () => this._applyServerBlock(node,
+                await this.client.request('PATCH', `/blocks/${blockId}`, { body: edit.todoPatch(checked) })),
+        });
+        return { checked: node.checked };
+    }
+
+    async editText(blockId, text) {
+        const { node } = this._editTarget(blockId);
+        if (!edit.canEditText(node)) throw new NotionError('not_editable');
+        if (edit.plain(node.rich) === text) return { unchanged: true };
+        const before = node.rich;
+        const { rich, body } = edit.textPatch(node, text);
+        await this._write(blockId, {
+            apply: () => { node.rich = rich; },
+            rollback: () => { node.rich = before; },
+            send: async () => this._applyServerBlock(node,
+                await this.client.request('PATCH', `/blocks/${blockId}`, { body })),
+        });
+        return { unchanged: false };
+    }
+
+    async deleteBlock(blockId) {
+        const { node, list, index } = this._editTarget(blockId);
+        if (!edit.canDelete(node)) throw new NotionError('not_editable');
+        await this._write(blockId, {
+            apply: () => { list.splice(index, 1); },
+            rollback: () => { if (list[index] !== node) list.splice(Math.min(index, list.length), 0, node); },
+            // DELETE moves the block to Notion's trash (it can be restored from Notion).
+            send: () => this.client.request('DELETE', `/blocks/${blockId}`),
+        });
+        return true;
     }
 
     async clearCache() {

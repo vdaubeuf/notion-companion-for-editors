@@ -23,13 +23,16 @@ const PATHS = {
     db: ['M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z', 'M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6', 'M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3'],
     file: ['M6 3h8l4 4v14H6z', 'M9 13h6', 'M9 17h6'],
     check: ['M5 12l5 5 9-10'],
+    edit: ['M4 20h4L19 9l-4-4L4 16z', 'M13.5 6.5l4 4'],
+    trash: ['M5 7h14', 'M10 4h4', 'M7 7l1 13h8l1-13', 'M10 11v6', 'M14 11v6'],
+    plus: ['M12 5v14', 'M5 12h14'],
     cloudOff: ['M4 4l16 16', 'M8 8a5 5 0 0 0-2 9.6h11', 'M13.5 6.2A5 5 0 0 1 19 11a3.5 3.5 0 0 1 1.3 6.2'],
 };
 
 const GLYPHS = {
     refresh: '↻', pin: '⊤', gear: '⚙', external: '↗', more: '⋯', back: '‹', search: '⌕',
     link: '⛓', unlink: '✂', swap: '⇄', x: '✕', dockRight: '▐', dockLeft: '▌', alert: '!',
-    page: '▤', db: '▦', file: '▤', check: '✓', cloudOff: '◌',
+    page: '▤', db: '▦', file: '▤', check: '✓', cloudOff: '◌', edit: '✎', trash: '✕', plus: '+',
 };
 
 function useGlyphs() {

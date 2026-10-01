@@ -20,6 +20,9 @@ class PageView {
         this.renderedPageId = null;
         this.menuOpen = false;
         this.openToggles = new Set();
+        // Editing: edit mode (text + delete) is opt-in; to-do boxes are always clickable.
+        this.editMode = false;
+        this.edit = { editingId: null, draft: null, confirmId: null, pending: new Set() };
 
         // Delegated link handling: everything opens outside the panel, validated by the host.
         const onActivate = (e) => {
@@ -98,6 +101,12 @@ class PageView {
         items.push(h('div', { class: 'page-bar' },
             h('div', { class: 'page-bar-title', title: assoc.title }, pageIcon(assoc.icon), h('span', { class: 'ellipsis', text: assoc.title })),
             h('div', { class: 'page-bar-actions' },
+                this._canEdit(state) ? button({
+                    class: `icon-btn ${this.editMode ? 'active' : ''}`.trim(),
+                    title: this.editMode ? 'Terminer les modifications' : 'Modifier la page (texte, suppression de blocs)',
+                    'aria-label': 'Modifier la page', 'aria-pressed': this.editMode ? 'true' : 'false',
+                    onClick: () => this._setEditMode(!this.editMode),
+                }, icon('edit')) : null,
                 button({ class: 'btn small', onClick: a.openInNotion, title: 'Ouvrir dans Notion' }, icon('external'), h('span', { class: 'label', text: 'Ouvrir dans Notion' })),
                 h('div', { class: 'menu-wrap', 'data-menu': '1' },
                     button({
@@ -106,6 +115,11 @@ class PageView {
                     }, icon('more')),
                     menu))));
         if (status.length) items.push(h('div', { class: 'page-status' }, status));
+        if (this.editMode) {
+            items.push(h('div', { class: 'edit-bar' },
+                icon('edit'), h('span', { class: 'edit-bar-text', text: 'Mode édition : cliquez sur un texte pour le modifier. Entrée enregistre, Échap annule.' }),
+                button({ class: 'btn small', onClick: () => this._setEditMode(false) }, 'Terminer')));
+        }
 
         if (p.error) items.push(this._errorBanner(state));
         if (p.truncated && p.status === 'ready' && !p.refreshing) {
@@ -113,6 +127,70 @@ class PageView {
                 h('span', { class: 'link', 'data-open-in-notion': '1', role: 'link', tabindex: '0', text: 'Voir la page complète dans Notion' })));
         }
         setChildren(this.top, items);
+    }
+
+    _canEdit(state) {
+        const c = this.last && this.last.content;
+        return !!(state.association && c && c.page && !c.readOnly && !c.partial && state.page.status === 'ready');
+    }
+
+    _setEditMode(on) {
+        this.editMode = on;
+        this.edit.editingId = null;
+        this.edit.draft = null;
+        this.edit.confirmId = null;
+        this._renderTop(this.last.state);
+        this._rerender();
+    }
+
+    _rerender() {
+        if (this.last) this._renderContent(this.last.state, this.last.content, true);
+    }
+
+    async _run(blockId, fn) {
+        this.edit.pending.add(blockId);
+        this._rerender();
+        try { await fn(); } finally { this.edit.pending.delete(blockId); this._rerender(); }
+    }
+
+    _editCtx(content) {
+        if (!content || content.readOnly || content.partial) return null;
+        const a = this.actions;
+        const e = this.edit;
+        return {
+            enabled: this.editMode,
+            editingId: e.editingId,
+            draft: e.draft,
+            confirmId: e.confirmId,
+            pending: e.pending,
+            onTodo: (node, checked) => this._run(node.id, () => a.setTodo(node.id, checked)),
+            onStartEdit: (node) => {
+                e.editingId = node.id;
+                e.draft = null;
+                e.confirmId = null;
+                this._rerender();
+            },
+            onDraft: (text) => { e.draft = text; },
+            onCommit: (node, text) => {
+                e.editingId = null;
+                e.draft = null;
+                this._run(node.id, () => a.editText(node.id, text));
+            },
+            onCancel: () => {
+                e.editingId = null;
+                e.draft = null;
+                this._rerender();
+            },
+            onDelete: (node) => {
+                if (e.confirmId !== node.id) {
+                    e.confirmId = node.id;
+                    this._rerender();
+                    return;
+                }
+                e.confirmId = null;
+                this._run(node.id, () => a.deleteBlock(node.id));
+            },
+        };
     }
 
     _hostProblem(host) {
@@ -155,7 +233,13 @@ class PageView {
 
         const samePage = content && this.renderedPageId === (content.page && content.page.id);
         const scrollTop = this.scroll.scrollTop;
-        if (!samePage) this.openToggles.clear();
+        if (!samePage) {
+            this.openToggles.clear();
+            if (this.editMode) { this.editMode = false; this._renderTop(state); }
+            this.edit.editingId = null;
+            this.edit.draft = null;
+            this.edit.confirmId = null;
+        }
         this.renderedContent = content;
         clear(this.contentEl);
 
@@ -170,7 +254,8 @@ class PageView {
         this.renderedPageId = content.page ? content.page.id : null;
         const titleIcon = content.page && content.page.icon ? pageIcon(content.page.icon, 'title-icon') : null;
         this.contentEl.appendChild(h('div', { class: 'n-title' }, titleIcon, h('span', { text: content.page ? content.page.title : '' })));
-        this.contentEl.appendChild(renderBlocks(content.blocks, { partial: !!content.partial, openToggles: this.openToggles }));
+        this.contentEl.classList.toggle('edit-mode', this.editMode);
+        this.contentEl.appendChild(renderBlocks(content.blocks, { partial: !!content.partial, openToggles: this.openToggles, edit: this._editCtx(content) }));
         if (!content.blocks || content.blocks.length === 0) {
             this.contentEl.appendChild(h('p', { class: 'muted', text: content.partial ? 'Chargement de la page…' : 'Cette page est vide.' }));
         }

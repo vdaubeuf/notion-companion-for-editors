@@ -51,6 +51,15 @@ const v = {
         }
         return s;
     },
+    blockId(value) {
+        const id = normalizeId(value);
+        if (!id) throw new InputError('bad block id');
+        return id;
+    },
+    boolean(value) {
+        if (typeof value !== 'boolean') throw new InputError('bad boolean');
+        return value;
+    },
     patch(value) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) throw new InputError('bad patch');
         return value;
@@ -63,6 +72,7 @@ const OPERATION_NAMES = [
     'saveToken', 'testConnection', 'clearToken', 'search', 'parents',
     'associate', 'associateForKey', 'adoptSuggestion', 'dismissSuggestion', 'dissociate', 'removeAssociation', 'listAssociations',
     'clearCache', 'cacheStats',
+    'setTodo', 'editText', 'deleteBlock',
 ];
 
 function createOperations({ controller, actions }) {
@@ -97,6 +107,10 @@ function createOperations({ controller, actions }) {
 
         clearCache: () => controller.clearCache(),
         cacheStats: () => actions.cacheStats(),
+
+        setTodo: (blockId, checked) => controller.setTodo(v.blockId(blockId), v.boolean(checked)),
+        editText: (blockId, text) => controller.editText(v.blockId(blockId), v.string(text, 20000)),
+        deleteBlock: (blockId) => controller.deleteBlock(v.blockId(blockId)),
     };
 }
 

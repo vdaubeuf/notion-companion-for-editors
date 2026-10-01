@@ -11,6 +11,7 @@ const OPERATIONS = [
     'saveToken', 'testConnection', 'clearToken', 'search', 'parents',
     'associate', 'associateForKey', 'adoptSuggestion', 'dismissSuggestion', 'dissociate', 'removeAssociation', 'listAssociations',
     'clearCache', 'cacheStats',
+    'setTodo', 'editText', 'deleteBlock',
 ];
 
 function subscribe(channel, callback) {

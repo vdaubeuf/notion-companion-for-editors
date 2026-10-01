@@ -364,6 +364,13 @@ test('operations: validators and error envelope', async () => {
     assert.equal((await runOperation({}, 'constructor', [], silentLog)).ok, false);
 });
 
+test('operations: Resolve preload exposes exactly the core operations', () => {
+    const { OPERATION_NAMES } = req('core/operations');
+    const src = fs.readFileSync(path.join(REPO, 'hosts/resolve/preload.js'), 'utf8');
+    const list = /const OPERATIONS = \[([\s\S]*?)\];/.exec(src)[1].match(/'([^']+)'/g).map((x) => x.slice(1, -1));
+    assert.deepEqual([...list].sort(), [...OPERATION_NAMES].sort());
+});
+
 test('logger: tokens are redacted', () => {
     const out = redact('Authorization: Bearer ntn_1234567890abcdef token=secret_abcdefghijk');
     assert.ok(!out.includes('ntn_1234567890abcdef') && !out.includes('secret_abcdefghijk'));
@@ -385,6 +392,78 @@ test('manifests: versions match core/constants.js, Premiere host is an object (i
     assert.ok(pm.host && !Array.isArray(pm.host), 'host must be an object for Creative Cloud installer');
     assert.ok(fs.readFileSync(path.join(REPO, 'build/resolve/manifest.xml'), 'utf8').includes(`<Version>${numeric}</Version>`));
     assert.equal(JSON.parse(fs.readFileSync(path.join(REPO, 'build/resolve/package.json'), 'utf8')).version, PLUGIN_VERSION);
+});
+
+// ---------------------------------------------------------------- editing
+const edit = req('core/notion/edit');
+
+test('edit: spliceRich keeps styles outside the edited range', () => {
+    const rich = [{ t: 'Plus de ' }, { t: 'folie', b: 1 }, { t: ' sur SEQ 3' }];
+    assert.deepEqual(edit.spliceRich(rich, 'Plus de folie sur SEQ 3 !'), [{ t: 'Plus de ' }, { t: 'folie', b: 1 }, { t: ' sur SEQ 3 !' }]);
+    // typing right after a bold word continues it (Notion behaviour)
+    assert.deepEqual(edit.spliceRich(rich, 'Plus de folies sur SEQ 3'), [{ t: 'Plus de ' }, { t: 'folies', b: 1 }, { t: ' sur SEQ 3' }]);
+    // deleting across segments, merging what is left
+    assert.deepEqual(edit.spliceRich(rich, 'Plus SEQ 3'), [{ t: 'Plus SEQ 3' }]);
+    assert.deepEqual(edit.spliceRich(rich, ''), []);
+    assert.deepEqual(edit.spliceRich([], 'Nouveau'), [{ t: 'Nouveau' }]);
+    assert.deepEqual(edit.spliceRich([{ t: 'ab', href: 'https://x.y/' }], 'Xab'), [{ t: 'Xab', href: 'https://x.y/' }]);
+});
+
+test('edit: API rich text, 2000-char chunks, editability rules', () => {
+    const api = edit.toApiRichText([{ t: 'a'.repeat(2500), i: 1, color: 'red', href: 'https://x.y/' }]);
+    assert.equal(api.length, 2);
+    assert.equal(api[0].text.content.length, 2000);
+    assert.deepEqual(api[1].annotations, { bold: false, italic: true, strikethrough: false, underline: false, code: false, color: 'red' });
+    assert.deepEqual(api[0].text.link, { url: 'https://x.y/' });
+    assert.equal(edit.canEditText({ type: 'paragraph', rich: [{ t: 'x' }] }), true);
+    assert.equal(edit.canEditText({ type: 'paragraph', rich: [{ t: '@Val', mention: 'user' }] }), false);
+    assert.equal(edit.canEditText({ type: 'image' }), false);
+    assert.equal(edit.canDelete({ type: 'child_page' }), false);
+    assert.equal(edit.canDelete({ type: 'to_do' }), true);
+    assert.deepEqual(edit.textPatch({ type: 'heading_2', rich: [] }, 'T').body, { heading_2: { rich_text: edit.toApiRichText([{ t: 'T' }]) } });
+});
+
+function editController(responder) {
+    const { Controller } = req('core/controller');
+    const { Emitter } = req('core/emitter');
+    const calls = [];
+    const client = { request: async (method, p, opts = {}) => { calls.push({ method, path: p, body: opts.body }); return responder(method, p, opts); } };
+    const watcher = new Emitter();
+    const c = new Controller({
+        watcher, client, log: silentLog,
+        associations: { count: () => 0 }, secrets: { hasToken: () => true, getToken: () => 't' },
+        cache: { put: async () => {} }, hostInfo: { id: 'resolve', name: 'R' },
+    });
+    const todo = { id: '00000000-0000-4000-8000-000000000001', type: 'to_do', rich: [{ t: 'Mixage' }], checked: false, children: [], hasChildren: false };
+    const para = { id: '00000000-0000-4000-8000-000000000002', type: 'paragraph', rich: [{ t: 'Texte' }], children: [], hasChildren: false };
+    c.content = { page: { id: 'p' }, blocks: [todo, para], partial: false };
+    return { c, calls, todo, para };
+}
+
+test('controller: to-do, text and delete edits are sent and applied', async () => {
+    const { c, calls, todo, para } = editController((method, p, { body }) => {
+        if (method === 'PATCH' && body.paragraph) return { object: 'block', id: para.id, type: 'paragraph', paragraph: { rich_text: [{ type: 'text', plain_text: 'Texte modifié', annotations: {} }] } };
+        return { object: 'block', id: todo.id, type: 'to_do', to_do: { rich_text: [{ plain_text: 'Mixage' }], checked: true } };
+    });
+    await c.setTodo(todo.id, true);
+    assert.equal(c.content.blocks[0].checked, true);
+    assert.deepEqual(calls[0], { method: 'PATCH', path: `/blocks/${todo.id}`, body: { to_do: { checked: true } } });
+    await c.editText(para.id, 'Texte modifié');
+    assert.equal(c.content.blocks[1].rich[0].t, 'Texte modifié');
+    assert.deepEqual((await c.editText(para.id, 'Texte modifié')), { unchanged: true });
+    await c.deleteBlock(todo.id);
+    assert.equal(calls[calls.length - 1].method, 'DELETE');
+    assert.equal(c.content.blocks.length, 1);
+});
+
+test('controller: failed edit is rolled back, 403 becomes write_denied', async () => {
+    const { NotionError } = req('core/notion/errors');
+    const { c, todo } = editController(() => { throw new NotionError('restricted', { status: 403 }); });
+    await assert.rejects(c.setTodo(todo.id, true), (e) => e.code === 'write_denied');
+    assert.equal(c.content.blocks[0].checked, false);
+    await assert.rejects(c.deleteBlock(todo.id), (e) => e.code === 'write_denied');
+    assert.equal(c.content.blocks[0], todo);
+    await assert.rejects(c.editText('00000000-0000-4000-8000-0000000000ff', 'x'), (e) => e.code === 'not_found');
 });
 
 // ---------------------------------------------------------------- runner
