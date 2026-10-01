@@ -1,6 +1,6 @@
 # État du projet
 
-*Mis à jour le 25 septembre 2026 — version 0.2.0.*
+*Mis à jour le 1er octobre 2026 — version 0.2.0 + changements non publiés (édition, onglets, plusieurs comptes).*
 
 Ce document sépare ce qui a été **vérifié en conditions réelles**, ce qui ne l'a été **que par des tests automatiques**, et ce qui **reste à tester**. Il sert aussi de liste des points à revoir ensemble (interface, comportements).
 
@@ -37,7 +37,7 @@ Configuration de test : macOS, DaVinci Resolve Studio 21.1.0 (build 14), Premier
 
 ## Vérifié uniquement par des tests automatiques
 
-`./scripts/test.sh` : 29 tests.
+`./scripts/test.sh` : 37 tests.
 
 - Règles d'association : identifiant, emplacement exact (Premiere), repli par nom (Resolve), suggestions, séparation des deux logiciels.
 - Migrations de format.
@@ -45,10 +45,26 @@ Configuration de test : macOS, DaVinci Resolve Studio 21.1.0 (build 14), Premier
 - Chargement récursif des pages.
 - Validation des opérations et masquage des tokens.
 - Syntaxe des bundles, versions des manifestes.
+- Édition : report d'une modification de texte sur le texte enrichi (styles et liens conservés), découpage à 2000 caractères, requêtes `PATCH` / `DELETE` envoyées, annulation à l'écran si Notion refuse (403 → message dédié).
+- Onglets : 4 pages au maximum, doublons refusés, onglet actif, migration v2 → v3.
+- Comptes : reprise du token de la v0.2 comme compte par défaut, ajout, dédoublonnage (même intégration), remplacement, retrait ; chaque recherche / page utilise le token de son compte ; aucun token dans l'état envoyé à l'interface.
+- Liste des opérations identique entre `core/operations.js` et `preload.js` (Resolve).
+
+L'interface commune a aussi été testée dans Chromium avec le vrai contrôleur et une **fausse API Notion en mémoire** (scénarios : cocher une to-do, modifier un texte, Échap, supprimer un bloc, refus 403 ; ajouter / changer / retirer des onglets ; ajouter un second compte et une page d'un autre workspace). Ce banc d'essai n'est pas livré. **Rien de cela n'a encore été essayé contre la vraie API Notion, ni dans Resolve ou Premiere.**
 
 Le panneau Premiere a aussi été rendu dans Chromium, avec des bouchons de test à la place des modules Adobe. Ces bouchons ne sont pas livrés et le test ne remplace pas un essai dans Premiere.
 
 ## À tester
+
+### Nouveautés (édition, onglets, comptes) — dans les deux logiciels
+
+- [ ] Cocher / décocher une to-do avec un vrai Personal Access Token : Notion accepte-t-il l'écriture avec la capacité « Notion API » ?
+- [ ] Modifier un texte avec gras / lien au milieu : la mise en forme est-elle conservée dans Notion ?
+- [ ] Supprimer un bloc : il apparaît bien dans la corbeille Notion.
+- [ ] Zone de saisie (`textarea`) dans UXP : focus, Entrée / Échap, hauteur automatique.
+- [ ] Onglets dans un panneau étroit (Premiere ancré), 4 onglets.
+- [ ] Deux workspaces : recherche avec le sélecteur, page de l'autre workspace en onglet.
+- [ ] Migration réelle : données de la v0.2 (associations + token) relues sans rien ressaisir.
 
 Au moment de la publication, les journaux ne montraient encore ni recherche ni association côté Premiere. La version 0.2.0 n'avait pas non plus été relancée dans Resolve.
 
@@ -89,6 +105,18 @@ Au moment de la publication, les journaux ne montraient encore ni recherche ni a
 ## Prochaines étapes prévues
 
 - **UI / UX** : passe de design à faire ensemble (voir les points ci-dessus).
-- **Plusieurs comptes / workspaces Notion** : plusieurs tokens, chaque association retient son compte.
-- **Google Drive** (et autres sources), avec plusieurs comptes.
-- To-do modifiables (écriture vers Notion).
+- **Tests réels** des nouveautés (liste ci-dessus), puis publication d'une 0.3.0.
+- Ajout de blocs depuis le panneau (nouvelle ligne, nouvelle to-do).
+
+## Évolutions envisagées
+
+### Google Docs / Google Drive — mis de côté pour l'instant
+
+Afficher un Google Doc dans un onglet, comme une page Notion, est techniquement possible : le format des associations prévoit déjà une `source` et un compte par page, et le rendu commun pourrait afficher un document converti. Ce n'est pas prévu pour l'instant, par simplicité, car cela impose des contraintes côté Google :
+
+- **Projet Google Cloud obligatoire**, géré par l'éditeur du plugin (une seule fois, pas par chaque utilisateur) : écran de consentement OAuth, client OAuth de type « Application de bureau », API Google Docs activée. Contrairement à Notion, il n'existe pas de simple token personnel à coller pour lire des documents privés.
+- **Validation de l'application par Google** : la lecture des documents (`documents.readonly`) est une autorisation classée « sensible ». Sans validation, les utilisateurs voient un avertissement « application non validée ». En mode « Test », l'accès est limité à 100 comptes déclarés, et les connexions expirent au bout de 7 jours (il faut se reconnecter chaque semaine). Lister ou rechercher les fichiers Drive demanderait des autorisations Drive dites « restreintes », avec une évaluation de sécurité en plus.
+- **Premiere Pro** : la connexion Google d'une application de bureau repose sur une redirection vers un petit serveur local (`127.0.0.1`). À ma connaissance, un panneau UXP ne peut pas en ouvrir. Le flux « appareil » de Google (code à saisir sur une autre page) n'accepte pas les autorisations Docs / Drive. La fonction serait donc d'abord limitée à Resolve.
+- Maintenance : jetons Google à rafraîchir et à révoquer, conversion du format Google Docs à suivre.
+
+Ces points n'ont pas pu être revérifiés sur la documentation officielle de Google au moment de la rédaction (accès bloqué depuis l'environnement de travail). À reconfirmer avant de s'y lancer, à partir de la documentation Google : [OAuth 2.0 pour les applications de bureau](https://developers.google.com/identity/protocols/oauth2/native-app).

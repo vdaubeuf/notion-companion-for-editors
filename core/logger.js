@@ -8,9 +8,6 @@
 // plus any "Bearer <value>" fragment.
 const TOKEN_PATTERNS = [
     /\b(secret_|ntn_)[A-Za-z0-9_\-]{8,}/g,
-    // Google OAuth access / refresh tokens.
-    /\b(ya29\.)[A-Za-z0-9_\-.]{8,}/g,
-    /\b(1\/\/)[A-Za-z0-9_\-]{8,}/g,
     /(Bearer\s+)[^\s"',]+/gi,
 ];
 
