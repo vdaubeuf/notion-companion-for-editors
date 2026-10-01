@@ -20,6 +20,10 @@ const USER_MESSAGES = {
     invalid_input: 'Donnée invalide.',
     token_rejected: 'Token refusé par Notion : vérifiez qu’il est complet, actif et doté de la capacité « Notion API ».',
     invalid_token_format: 'Ce token ne ressemble pas à un token Notion (vérifiez le copier-coller).',
+    write_denied: 'Notion refuse la modification : le token n’a pas le droit de modifier le contenu de cette page.',
+    write_rejected: 'Notion a refusé la modification.',
+    not_editable: 'Ce bloc ne peut pas être modifié depuis le panneau. Ouvrez la page dans Notion.',
+    edit_busy: 'Modification en cours sur ce bloc, patientez un instant.',
     unknown: 'Une erreur inattendue est survenue.',
 };
 

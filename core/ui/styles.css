@@ -270,6 +270,39 @@ a.link.mention { text-decoration: underline; text-decoration-color: var(--faint)
 .pending-children span:last-child { width: 45%; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
+/* ---------- editing ---------- */
+.todo-box.interactive:hover { border-color: var(--text); }
+.todo-box.checked.interactive:hover { background: #ee9350; border-color: #ee9350; }
+.edit-bar { display: flex; align-items: center; gap: 7px; padding: 5px 8px 5px 12px; font-size: 11px; color: var(--accent); background: var(--accent-soft); border-bottom: 1px solid var(--border-soft); }
+.edit-bar .icon { width: 13px; height: 13px; }
+.edit-bar-text { flex: 1; min-width: 0; color: var(--text); }
+body.narrow .edit-bar-text { display: none; }
+body.narrow .edit-bar { justify-content: space-between; }
+.editable { cursor: text; border-radius: 3px; box-shadow: 0 0 0 1px transparent; transition: box-shadow 0.1s, background 0.1s; }
+.editable:hover { background: rgba(255, 255, 255, 0.04); box-shadow: 0 0 0 1px var(--border); }
+.n-p.empty.editable { min-height: 1.6em; }
+.edit-area {
+    display: block; width: 100%; margin: 0; padding: 1px 4px; resize: none; overflow: hidden;
+    font: inherit; line-height: inherit; color: var(--text-strong); letter-spacing: inherit;
+    background: #161618; border: 1px solid var(--accent); border-radius: 3px; outline: none;
+}
+.edit-area.mono { font: 11.5px/1.5 var(--mono); }
+.todo-row > .todo-text.editing, .toggle-label .editing { flex: 1; min-width: 0; }
+.todo-text.editing { display: block; }
+.edit-block { position: relative; }
+.block-del {
+    position: absolute; right: 0; top: 0; z-index: 2;
+    display: none; align-items: center; justify-content: center; gap: 4px;
+    min-width: 22px; height: 22px; padding: 0 4px; border-radius: 3px;
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+    font-size: 11px; font-weight: 400; line-height: 1; letter-spacing: 0; cursor: pointer;
+}
+.block-del .icon { width: 13px; height: 13px; }
+.edit-block:hover > .block-del, .block-del:focus, .block-del.confirm { display: inline-flex; }
+.block-del:hover { color: var(--err); border-color: rgba(224, 98, 90, 0.5); }
+.block-del.confirm { background: var(--err); border-color: var(--err); color: #fff; font-weight: 600; padding: 0 7px; }
+.edit-pending { opacity: 0.55; }
+
 /* Notion colours, adapted for a dark background. */
 .fg-gray { color: #9b9b9b; } .fg-brown { color: #ba856f; } .fg-orange { color: #c77d48; }
 .fg-yellow { color: #ca9849; } .fg-green { color: #529e72; } .fg-blue { color: #5e87c9; }

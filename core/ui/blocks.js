@@ -5,8 +5,13 @@
 // ctx = {
 //   partial: boolean,                   content still loading: placeholders for pending children
 //   openToggles: Set<string>,           ids of toggles the user opened (kept across re-renders)
-//   onTodoToggle?: (id, checked) => void  not set in this version (read-only to-dos); when provided,
-//                                         to-do boxes become interactive — hook for a future write-back.
+//   edit?: {                            absent for read-only content
+//     enabled: boolean,                 edit mode: text can be edited, blocks deleted
+//     editingId, draft,                 block whose text is being edited, and the current textarea value
+//     confirmId,                        block whose delete button waits for confirmation
+//     pending: Set<string>,             blocks with a write in flight
+//     onTodo(node, checked), onStartEdit(node), onDraft(text), onCommit(node, text), onCancel(), onDelete(node)
+//   }
 // }
 //
 // Links are rendered as <span data-href> (handled by the page view), never as
@@ -14,6 +19,7 @@
 
 const { h, append } = require('./dom');
 const { icon, pageIcon } = require('./icons');
+const { canEditText, canDelete, plain: plainText } = require('../notion/edit');
 
 const NOTION_COLORS = new Set(['gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']);
 
@@ -98,6 +104,72 @@ function toggle(node, ctx, summaryContent, bodyFactory, extraClass = '') {
     return append(wrap, [summary, body]);
 }
 
+// ---------- editing ----------
+
+function autosize(ta) {
+    ta.style.height = 'auto';
+    if (ta.scrollHeight) ta.style.height = `${ta.scrollHeight + 2}px`;
+}
+
+function editArea(node, ctx) {
+    const e = ctx.edit;
+    const value = e.draft !== null && e.draft !== undefined ? e.draft : plainText(node.rich);
+    const lines = value.split('\n').length;
+    const ta = h('textarea', { class: `edit-area ${node.type === 'code' ? 'mono' : ''}`.trim(), rows: String(Math.max(1, lines)), spellcheck: 'false' });
+    ta.value = value;
+    let done = false;
+    const commit = () => { if (!done) { done = true; e.onCommit(node, ta.value); } };
+    const cancel = () => { if (!done) { done = true; e.onCancel(); } };
+    ta.addEventListener('input', () => { e.onDraft(ta.value); autosize(ta); });
+    ta.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Escape') { ev.preventDefault(); cancel(); return; }
+        // Enter saves; Shift+Enter adds a line break. In code blocks, Enter is a line break and Cmd/Ctrl+Enter saves.
+        if (ev.key === 'Enter' && !ev.shiftKey && (node.type !== 'code' || ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commit(); }
+    });
+    ta.addEventListener('blur', commit);
+    ta.addEventListener('click', (ev) => ev.stopPropagation());
+    setTimeout(() => {
+        if (!ta.parentNode) return;
+        ta.focus();
+        try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) { /* UXP */ }
+        autosize(ta);
+    }, 0);
+    return ta;
+}
+
+// Text part of a block: the rich text, or a textarea when that block is being edited.
+function textEl(tag, cls, node, ctx, content) {
+    const e = ctx.edit;
+    if (e && e.enabled && e.editingId === node.id) return h(tag, { class: `${cls} editing`.trim() }, editArea(node, ctx));
+    const editable = !!(e && e.enabled && canEditText(node) && !e.pending.has(node.id));
+    const el = h(tag, { class: `${cls}${editable ? ' editable' : ''}`.trim() }, content);
+    if (editable) {
+        el.setAttribute('title', 'Cliquer pour modifier');
+        el.addEventListener('click', (ev) => { ev.stopPropagation(); ev.preventDefault(); e.onStartEdit(node); });
+    }
+    return el;
+}
+
+// Edit-mode decorations on a rendered block: delete button, pending state.
+function decorate(el, node, ctx) {
+    const e = ctx.edit;
+    if (!el || !e || el.nodeType !== 1) return el;
+    if (e.pending.has(node.id)) el.classList.add('edit-pending');
+    if (!e.enabled || !canDelete(node) || e.editingId === node.id) return el;
+    el.classList.add('edit-block');
+    const confirming = e.confirmId === node.id;
+    const del = h('span', {
+        class: `block-del ${confirming ? 'confirm' : ''}`.trim(), role: 'button', tabindex: '0',
+        title: confirming ? 'Cliquer encore pour supprimer (corbeille Notion)' : (node.hasChildren ? 'Supprimer ce bloc et son contenu' : 'Supprimer ce bloc'),
+    }, confirming ? 'Supprimer ?' : icon('trash'));
+    const fire = (ev) => { ev.stopPropagation(); ev.preventDefault(); e.onDelete(node); };
+    del.addEventListener('click', fire);
+    del.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') fire(ev); });
+    el.insertBefore(del, el.firstChild);
+    return el;
+}
+
 function renderTable(node) {
     const rows = node.children || [];
     const table = h('table', { class: 'n-table' });
@@ -134,7 +206,7 @@ function renderBlock(node, ctx) {
     const cc = colorClass(node.color);
     switch (node.type) {
         case 'paragraph': {
-            const p = h('div', { class: `n-p ${cc} ${plain(node.rich) ? '' : 'empty'}`.trim() }, renderRich(node.rich));
+            const p = textEl('div', `n-p ${cc} ${plain(node.rich) ? '' : 'empty'}`, node, ctx, renderRich(node.rich));
             const kids = childrenOf(node, ctx);
             return kids ? h('div', null, p, kids) : p;
         }
@@ -143,7 +215,9 @@ function renderBlock(node, ctx) {
         case 'heading_3':
         case 'heading_4': {
             const level = Number(node.type.slice(-1));
-            const hd = h('div', { class: `n-h${level} ${cc}`.trim(), role: 'heading', 'aria-level': String(level) }, renderRich(node.rich));
+            const hd = textEl('div', `n-h${level} ${cc}`, node, ctx, renderRich(node.rich));
+            hd.setAttribute('role', 'heading');
+            hd.setAttribute('aria-level', String(level));
             if (node.toggleable) {
                 return toggle(node, ctx, hd, () => node.children.length ? renderBlocks(node.children, ctx) : (pendingChildren(node, ctx) || ''), `heading-toggle lvl-${level}`);
             }
@@ -151,31 +225,38 @@ function renderBlock(node, ctx) {
         }
         case 'bulleted_list_item':
         case 'numbered_list_item':
-            return h('li', { class: cc }, h('div', { class: 'li-text' }, renderRich(node.rich)), childrenOf(node, ctx));
+            return h('li', { class: cc }, textEl('div', 'li-text', node, ctx, renderRich(node.rich)), childrenOf(node, ctx));
         case 'to_do': {
-            const interactive = typeof ctx.onTodoToggle === 'function';
-            const box = h('span', { class: `todo-box ${node.checked ? 'checked' : ''} ${interactive ? 'interactive' : ''}`.trim(), role: 'checkbox', 'aria-checked': node.checked ? 'true' : 'false' },
-                node.checked ? '✓' : '');
-            if (interactive) box.addEventListener('click', () => ctx.onTodoToggle(node.id, !node.checked));
+            const interactive = !!(ctx.edit && ctx.edit.onTodo && !ctx.edit.pending.has(node.id));
+            const box = h('span', {
+                class: `todo-box ${node.checked ? 'checked' : ''} ${interactive ? 'interactive' : ''}`.trim(),
+                role: 'checkbox', 'aria-checked': node.checked ? 'true' : 'false', tabindex: interactive ? '0' : null,
+                title: interactive ? (node.checked ? 'Décocher' : 'Cocher') : null,
+            }, node.checked ? '✓' : '');
+            if (interactive) {
+                const flip = (ev) => { ev.stopPropagation(); ev.preventDefault(); ctx.edit.onTodo(node, !node.checked); };
+                box.addEventListener('click', flip);
+                box.addEventListener('keydown', (ev) => { if (ev.key === ' ' || ev.key === 'Enter') flip(ev); });
+            }
             return h('div', { class: `n-todo ${node.checked ? 'done' : ''} ${cc}`.trim() },
-                h('div', { class: 'todo-row' }, box, h('span', { class: 'todo-text' }, renderRich(node.rich))),
+                h('div', { class: 'todo-row' }, box, textEl('span', 'todo-text', node, ctx, renderRich(node.rich))),
                 childrenOf(node, ctx));
         }
         case 'toggle':
-            return toggle(node, ctx, renderRich(node.rich),
+            return toggle(node, ctx, textEl('span', 'toggle-text', node, ctx, renderRich(node.rich)),
                 () => node.children.length ? renderBlocks(node.children, ctx) : (pendingChildren(node, ctx) || h('div', { class: 'muted small', text: 'Vide' })), cc);
         case 'quote':
-            return h('div', { class: `n-quote ${cc}`.trim() }, renderRich(node.rich), childrenOf(node, ctx));
+            return h('div', { class: `n-quote ${cc}`.trim() }, textEl('div', 'quote-text', node, ctx, renderRich(node.rich)), childrenOf(node, ctx));
         case 'callout':
             return h('div', { class: `n-callout ${cc || 'bg-default'}` },
                 node.icon ? pageIcon(node.icon, 'callout-icon') : null,
-                h('div', { class: 'callout-body' }, h('div', null, renderRich(node.rich)), childrenOf(node, ctx)));
+                h('div', { class: 'callout-body' }, textEl('div', 'callout-text', node, ctx, renderRich(node.rich)), childrenOf(node, ctx)));
         case 'divider':
             return h('div', { class: 'n-hr' });
         case 'code':
             return h('div', { class: 'n-code' },
                 node.language && node.language !== 'plain text' ? h('div', { class: 'code-lang', text: node.language }) : null,
-                h('pre', null, h('code', { text: plain(node.rich) })),
+                textEl('pre', '', node, ctx, h('code', { text: plain(node.rich) })),
                 node.caption && node.caption.length ? h('div', { class: 'caption' }, renderRich(node.caption)) : null);
         case 'equation':
             return h('div', { class: 'n-equation' }, h('code', { text: node.expression }));
@@ -228,13 +309,13 @@ function renderBlocks(nodes, ctx) {
                 listType = node.type;
                 frag.appendChild(list);
             }
-            list.appendChild(renderBlock(node, ctx));
+            list.appendChild(decorate(renderBlock(node, ctx), node, ctx));
             continue;
         }
         list = null;
         listType = null;
         const el = renderBlock(node, ctx);
-        if (el) frag.appendChild(el);
+        if (el) frag.appendChild(decorate(el, node, ctx));
     }
     return frag;
 }
