@@ -129,12 +129,7 @@ function editArea(node, ctx) {
     });
     ta.addEventListener('blur', commit);
     ta.addEventListener('click', (ev) => ev.stopPropagation());
-    setTimeout(() => {
-        if (!ta.parentNode) return;
-        ta.focus();
-        try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) { /* UXP */ }
-        autosize(ta);
-    }, 0);
+    setTimeout(() => autosize(ta), 0);
     return ta;
 }
 

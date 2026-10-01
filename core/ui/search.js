@@ -14,7 +14,9 @@ function idFromInput(text) {
 
 class SearchView {
     /**
-     * @param {{ api: object, call: Function, heading: string, subheading?: string, onPick: (page) => Promise<void>, onClose: () => void }} opts
+     * @param {{ api: object, call: Function, heading: string, subheading?: string, onPick: (page, accountId) => Promise<void>, onClose: () => void,
+     *            accounts?: Array<{ id, name, workspace }>, accountId?: string }} opts
+     *   accounts: Notion accounts to search in (a selector is shown when there are several).
      */
     constructor(opts) {
         this.opts = opts;
@@ -26,6 +28,8 @@ class SearchView {
         this.active = -1;
         this.busyId = null;
         this.parents = new Map();
+        this.accounts = opts.accounts || [];
+        this.accountId = opts.accountId || (this.accounts[0] && this.accounts[0].id) || null;
 
         this.input = h('input', {
             class: 'search-input', type: 'text', placeholder: 'Rechercher une page Notion…', autocomplete: 'off', spellcheck: 'false',
@@ -40,10 +44,25 @@ class SearchView {
                 h('div', { class: 'view-titles' },
                     h('div', { class: 'view-title', text: opts.heading }),
                     opts.subheading ? h('div', { class: 'view-sub', text: opts.subheading }) : null)),
+            this.accounts.length > 1 ? this._accountSelect() : null,
             h('div', { class: 'search-box' }, icon('search'), this.input),
             h('div', { class: 'view-scroll' }, this.list, this.footer));
         this.timer = null;
         this.rows = [];
+    }
+
+    _accountSelect() {
+        const label = (a) => [a.workspace, a.name].filter(Boolean)[0] || 'Compte Notion';
+        const sel = h('select', { class: 'select' }, this.accounts.map((a) => h('option', { value: a.id, text: label(a) })));
+        sel.value = this.accountId;
+        sel.addEventListener('change', () => {
+            this.accountId = sel.value;
+            this.parents.clear();
+            this.results = [];
+            this._run(false);
+            this.input.focus();
+        });
+        return h('div', { class: 'search-account' }, h('span', { class: 'kv-k', text: 'Espace Notion' }), sel);
     }
 
     mount() {
@@ -64,7 +83,7 @@ class SearchView {
         if (!append) { this.cursor = null; this.active = -1; }
         this._render();
         try {
-            const res = await this.opts.call(this.opts.api.search, query, append ? this.cursor : null);
+            const res = await this.opts.call(this.opts.api.search, query, append ? this.cursor : null, this.accountId);
             if (seq !== this.seq) return;
             this.results = append ? [...this.results, ...res.results] : res.results;
             this.cursor = res.nextCursor;
@@ -92,7 +111,9 @@ class SearchView {
         }
         if (!refs.length) return;
         try {
-            const titles = await this.opts.call(this.opts.api.parents, refs);
+            const accountId = this.accountId;
+            const titles = await this.opts.call(this.opts.api.parents, refs, accountId);
+            if (accountId !== this.accountId) return;
             for (const [k, v] of Object.entries(titles)) this.parents.set(k, v);
             this._render();
         } catch (_) { /* parent path is optional */ }
@@ -119,7 +140,7 @@ class SearchView {
         this.busyId = page.id;
         this._render();
         try {
-            await this.opts.onPick(page);
+            await this.opts.onPick(page, this.accountId);
         } catch (e) {
             this.error = e;
         } finally {

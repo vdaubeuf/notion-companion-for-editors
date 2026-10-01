@@ -250,20 +250,22 @@ test('cache: put/get/prune/clear', async () => {
 // ---------------------------------------------------------------- secrets
 const { SecretStore } = req('core/storage/secrets');
 
-test('secrets: load/set/clear through provider, refuses without secure storage', async () => {
-    let stored = 'ntn_previous_token_1234567890';
-    const provider = { available: () => true, load: async () => stored, save: async (t) => { stored = t; }, clear: async () => { stored = null; } };
+test('secrets: one token per key through provider, refuses without secure storage', async () => {
+    const stored = { default: 'ntn_previous_token_1234567890' };
+    const provider = { available: () => true, load: async (k) => stored[k] || null, save: async (k, t) => { stored[k] = t; }, clear: async (k) => { delete stored[k]; } };
     const changes = [];
     const s = new SecretStore(provider, silentLog, { onChange: (t) => changes.push(t) });
-    await s.load();
-    assert.equal(s.getToken(), 'ntn_previous_token_1234567890');
-    await s.setToken('ntn_new_token_abcdefghijklmnop');
-    assert.equal(stored, 'ntn_new_token_abcdefghijklmnop');
-    await s.clearToken();
-    assert.equal(s.hasToken(), false);
-    assert.deepEqual(changes.slice(-1), [null]);
+    await s.load(['default', 'a1']);
+    assert.equal(s.get('default'), 'ntn_previous_token_1234567890');
+    assert.equal(s.has('a1'), false);
+    await s.set('a1', 'ntn_new_token_abcdefghijklmnop');
+    assert.equal(stored.a1, 'ntn_new_token_abcdefghijklmnop');
+    assert.deepEqual(changes.slice(-1)[0].sort(), ['ntn_new_token_abcdefghijklmnop', 'ntn_previous_token_1234567890']);
+    await s.clear('default');
+    assert.equal(s.has('default'), false);
+    assert.deepEqual(changes.slice(-1), [['ntn_new_token_abcdefghijklmnop']]);
     const none = new SecretStore({ ...provider, available: () => false }, silentLog);
-    await assert.rejects(none.setToken('ntn_x_abcdefghijklmnopqrstu'), (e) => e.code === 'encryption_unavailable');
+    await assert.rejects(none.set('x', 'ntn_x_abcdefghijklmnopqrstu'), (e) => e.code === 'encryption_unavailable');
 });
 
 // ---------------------------------------------------------------- blocks
@@ -464,8 +466,10 @@ function editController(responder) {
     const client = { request: async (method, p, opts = {}) => { calls.push({ method, path: p, body: opts.body }); return responder(method, p, opts); } };
     const watcher = new Emitter();
     const c = new Controller({
-        watcher, client, log: silentLog,
-        associations: { count: () => 0 }, secrets: { hasToken: () => true, getToken: () => 't' },
+        watcher, makeClient: () => client, log: silentLog,
+        associations: { count: () => 0 },
+        accounts: { get: (id) => (id === 'default' ? { id } : null), add() {}, list: () => [{ id: 'default', kind: 'notion' }], defaultId: () => 'default' },
+        secrets: { has: () => true, get: () => 't' },
         cache: { put: async () => {} }, hostInfo: { id: 'resolve', name: 'R' },
     });
     const todo = { id: '00000000-0000-4000-8000-000000000001', type: 'to_do', rich: [{ t: 'Mixage' }], checked: false, children: [], hasChildren: false };
@@ -498,6 +502,70 @@ test('controller: failed edit is rolled back, 403 becomes write_denied', async (
     await assert.rejects(c.deleteBlock(todo.id), (e) => e.code === 'write_denied');
     assert.equal(c.content.blocks[0], todo);
     await assert.rejects(c.editText('00000000-0000-4000-8000-0000000000ff', 'x'), (e) => e.code === 'not_found');
+});
+
+// ---------------------------------------------------------------- accounts
+const { AccountStore } = req('core/storage/accounts');
+
+async function accountsController({ legacyToken = null } = {}) {
+    const { Controller } = req('core/controller');
+    const { Emitter } = req('core/emitter');
+    const backend = memoryBackend();
+    const accounts = new AccountStore(backend, silentLog);
+    await accounts.load();
+    const stored = legacyToken ? { default: legacyToken } : {};
+    const secrets = new SecretStore({ available: () => true, load: async (k) => stored[k] || null, save: async (k, t) => { stored[k] = t; }, clear: async (k) => { delete stored[k]; } }, silentLog);
+    await secrets.load(['default']);
+    const associations = new AssociationStore(backend, silentLog);
+    await associations.load();
+    const seen = [];
+    const makeClient = (getToken) => ({
+        request: async (method, p, opts = {}) => {
+            const token = opts.token || getToken();
+            seen.push({ path: p, token });
+            if (!token) throw Object.assign(new Error('no token'), { code: 'no_token' });
+            if (token.includes('bad')) throw Object.assign(new Error('401'), { code: 'unauthorized' });
+            if (p === '/users/me') return token.includes('B') ? { id: 'botB', bot: { workspace_name: 'Studio B' } } : { id: 'botA', bot: { workspace_name: 'Sapa' } };
+            if (p === '/search') return { results: [], has_more: false };
+            return {};
+        },
+    });
+    const c = new Controller({ watcher: new Emitter(), associations, accounts, secrets, cache: { get: async () => null, put: async () => {} }, makeClient, log: silentLog, hostInfo: { id: 'resolve', name: 'R' } });
+    return { c, accounts, secrets, stored, seen };
+}
+
+test('accounts: v0.2 token becomes the default account; add, dedupe, replace, remove', async () => {
+    const { c, accounts, stored } = await accountsController({ legacyToken: 'ntn_tokenA_aaaaaaaaaaaaaaaa' });
+    assert.deepEqual(accounts.list().map((a) => a.id), ['default']);
+    assert.equal(c.state.notion.status, 'unchecked');
+    await c.checkNotion();
+    assert.equal(c.state.notion.status, 'ok');
+    assert.equal(c.state.notion.accounts[0].workspace, 'Sapa');
+    const b = await c.saveToken('ntn_tokenB_bbbbbbbbbbbbbbbb');
+    assert.equal(b.workspace, 'Studio B');
+    assert.equal(accounts.list().length, 2);
+    await c.saveToken('ntn_tokenB_bbbbbbbbbbbbbbbb2');           // same integration (bot id): updated, not duplicated
+    assert.equal(accounts.list().length, 2);
+    assert.equal(stored[b.id], 'ntn_tokenB_bbbbbbbbbbbbbbbb2');
+    await assert.rejects(c.saveToken('ntn_bad_cccccccccccccccccc'), (e) => e.code === 'token_rejected');
+    assert.ok(!JSON.stringify(c.state).includes('ntn_'));
+    await c.clearToken(b.id);
+    assert.equal(stored[b.id], undefined);
+    assert.deepEqual(accounts.list().map((a) => a.id), ['default']);
+});
+
+test('accounts: search and pages use the token of their account; removed account -> account_missing', async () => {
+    const { c, seen } = await accountsController({ legacyToken: 'ntn_tokenA_aaaaaaaaaaaaaaaa' });
+    const b = await c.saveToken('ntn_tokenB_bbbbbbbbbbbbbbbb');
+    await c.search('x', null, b.id);
+    assert.equal(seen[seen.length - 1].token, 'ntn_tokenB_bbbbbbbbbbbbbbbb');
+    await c.search('x', null);
+    assert.equal(seen[seen.length - 1].token, 'ntn_tokenA_aaaaaaaaaaaaaaaa');
+    await c.clearToken(b.id);
+    await assert.rejects(c.search('x', null, b.id), (e) => e.code === 'account_missing');
+    const { c: empty } = await accountsController();
+    assert.equal(empty.state.notion.status, 'unconfigured');
+    await assert.rejects(empty.search('x'), (e) => e.code === 'no_token');
 });
 
 // ---------------------------------------------------------------- runner

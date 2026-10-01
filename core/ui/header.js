@@ -20,7 +20,11 @@ function renderHeader(el, { state, settings, view }, actions) {
     const host = state.host;
     const hostName = host.name;
     const project = host.project;
-    const notion = NOTION_STATUS[state.notion.status] || NOTION_STATUS.unchecked;
+    const base = NOTION_STATUS[state.notion.status] || NOTION_STATUS.unchecked;
+    const multi = (state.notion.accounts || []).length > 1;
+    const ws = state.notion.user && (state.notion.user.workspace || state.notion.user.name);
+    // Several workspaces: say which one the page comes from.
+    const notion = multi && ws && state.notion.status === 'ok' ? { ...base, label: `Notion · ${ws}` } : base;
     const caps = (settings && settings.capabilities) || {};
 
     let title;

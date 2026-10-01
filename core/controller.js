@@ -40,16 +40,24 @@ function publicAssociation(a, matchedBy) {
 
 class Controller extends Emitter {
     /**
-     * @param {{ watcher, associations, secrets, cache, client, log, hostInfo: { id: string, name: string, identification: { uid: string, fallback: string } } }} deps
+     * @param {{ watcher, associations, accounts, secrets, cache, makeClient: (getToken: () => string|null) => object, log,
+     *            hostInfo: { id: string, name: string, identification: { uid: string, fallback: string } } }} deps
+     *   makeClient builds one Notion client per account (each token has its own rate limit).
      */
-    constructor({ watcher, associations, secrets, cache, client, log, hostInfo }) {
+    constructor({ watcher, associations, accounts, secrets, cache, makeClient, log, hostInfo }) {
         super();
         this.watcher = watcher;
         this.associations = associations;
+        this.accounts = accounts;
         this.secrets = secrets;
         this.cache = cache;
-        this.client = client;
+        this.makeClient = makeClient;
+        this.clients = new Map();
+        this.accountStatus = new Map();
         this.log = log;
+
+        // Token saved by v0.2 (single account): becomes the "default" account.
+        if (secrets.has('default') && !accounts.get('default')) accounts.add({ id: 'default', kind: 'notion' });
 
         this.currentKey = undefined;
         this.identity = null;
@@ -63,13 +71,14 @@ class Controller extends Emitter {
 
         this.state = {
             host: { ...hostInfo, status: 'connecting', project: null, version: null, uidSupported: null },
-            notion: { status: secrets.hasToken() ? 'unchecked' : 'unconfigured', user: null },
+            notion: null,
             association: null,
             suggestion: null,
             page: { status: 'none', pageId: null, fromCache: false, savedAt: null, refreshing: false, error: null, truncated: false },
             associationCount: associations.count(),
         };
         this.content = null;
+        this.state.notion = this._notionState();
 
         watcher.on('change', (ws) => this._onHostState(ws));
     }
@@ -88,6 +97,62 @@ class Controller extends Emitter {
     _setContent(content) {
         this.content = content;
         this.emit('content', content);
+    }
+
+    // ---------- Notion accounts ----------
+
+    // Account of a page reference (explicit, else the default Notion account).
+    _accountId(accountId) {
+        return accountId || this.accounts.defaultId('notion');
+    }
+
+    _activeAccount() {
+        const a = this.state.association;
+        return this._accountId(a ? a.account : null);
+    }
+
+    _client(accountId) {
+        const id = accountId || '__none__';
+        if (!this.clients.has(id)) this.clients.set(id, this.makeClient(() => (accountId ? this.secrets.get(accountId) : null)));
+        return this.clients.get(id);
+    }
+
+    // Throws when the account of a page is gone or has no token.
+    _requireToken(accountId) {
+        if (!accountId) throw new NotionError('no_token');
+        if (!this.accounts.get(accountId)) throw new NotionError('account_missing');
+        if (!this.secrets.has(accountId)) throw new NotionError('no_token');
+    }
+
+    _notionState() {
+        const accounts = this.accounts.list('notion').map((a) => ({
+            id: a.id,
+            name: a.name || null,
+            workspace: a.workspace || null,
+            status: this.secrets.has(a.id) ? (this.accountStatus.get(a.id) || 'unchecked') : 'invalid',
+        }));
+        const assoc = this.state && this.state.association;
+        const currentId = assoc ? this._activeAccount() : this.accounts.defaultId('notion');
+        const current = accounts.find((a) => a.id === currentId) || null;
+        let status = 'unconfigured';
+        if (current) status = current.status;
+        else if (accounts.length) status = assoc ? 'invalid' : accounts[0].status;
+        return {
+            status,
+            user: current ? { name: current.name, workspace: current.workspace } : null,
+            accounts,
+            defaultId: this.accounts.defaultId('notion'),
+        };
+    }
+
+    _refreshNotion() {
+        this._set({ notion: this._notionState() });
+    }
+
+    _setAccountStatus(accountId, status) {
+        if (!accountId || this.accountStatus.get(accountId) === status) return;
+        this.accountStatus.set(accountId, status);
+        this._refreshNotion();
     }
 
     getSnapshot() {
@@ -135,6 +200,7 @@ class Controller extends Emitter {
             pageCount: (suggestion.pages || []).length,
         } : null;
         this._set({ association: publicAssociation(match, matchedBy), suggestion: sugg });
+        this._refreshNotion();
 
         if (match) {
             this._loadPage(this.state.association.pageId);
@@ -151,7 +217,7 @@ class Controller extends Emitter {
         this.abort = null;
     }
 
-    async _loadPage(pageId, { preferNetwork = false } = {}) {
+    async _loadPage(pageId, { preferNetwork = false, accountId = this._activeAccount() } = {}) {
         this._cancelLoad();
         const loadId = this.loadSeq;
         const ac = new AbortController();
@@ -175,15 +241,17 @@ class Controller extends Emitter {
             truncated: cached ? !!cached.truncated : (keep ? prev.truncated : false),
         });
 
-        if (!this.secrets.getToken()) {
-            this._setPage({ status: this.content ? 'ready' : 'error', refreshing: false, error: toUserError(new NotionError('no_token')) });
+        try {
+            this._requireToken(accountId);
+        } catch (e) {
+            this._setPage({ status: this.content ? 'ready' : 'error', refreshing: false, error: toUserError(e) });
             return;
         }
 
         const editSeqAtStart = this.editSeq;
         try {
             const hadContent = !!this.content;
-            const result = await loadPageContent(this.client, pageId, {
+            const result = await loadPageContent(this._client(accountId), pageId, {
                 signal: ac.signal,
                 maxBlocks: C.MAX_BLOCKS_PER_PAGE,
                 maxDepth: C.MAX_BLOCK_DEPTH,
@@ -202,29 +270,29 @@ class Controller extends Emitter {
             this.lastEditedTime = result.page.lastEditedTime;
             this.associations.refreshPageInfo(pageId, result.page);
             this._syncAssociation();
-            if (this.state.notion.status !== 'ok') this._set({ notion: { ...this.state.notion, status: 'ok' } });
+            this._setAccountStatus(accountId, 'ok');
             this._setPage({ status: 'ready', fromCache: false, savedAt: new Date().toISOString(), refreshing: false, error: null, truncated: result.truncated });
             // The page was edited from the panel while it was loading: the loaded tree may predate the edit.
-            if (this.editSeq !== editSeqAtStart) this._loadPage(pageId, { preferNetwork: true });
+            if (this.editSeq !== editSeqAtStart) this._loadPage(pageId, { preferNetwork: true, accountId });
         } catch (e) {
             if (loadId !== this.loadSeq || (e && e.code === 'cancelled')) return;
             this.log.warn(`Loading page ${pageId} failed`, e);
-            this._noteNotionError(e);
+            this._noteNotionError(e, accountId);
             this._setPage({ status: this.content ? 'ready' : 'error', refreshing: false, error: toUserError(e) });
         }
     }
 
-    _noteNotionError(e) {
+    _noteNotionError(e, accountId) {
         if (!e) return;
-        if (e.code === 'unauthorized') this._set({ notion: { ...this.state.notion, status: 'invalid' } });
-        else if (e.code === 'network' || e.code === 'timeout') this._set({ notion: { ...this.state.notion, status: 'offline' } });
+        if (e.code === 'unauthorized') this._setAccountStatus(accountId, 'invalid');
+        else if (e.code === 'network' || e.code === 'timeout') this._setAccountStatus(accountId, 'offline');
     }
 
     // ---------- public actions (see operations.js) ----------
 
     async refresh() {
         await this.watcher.pollNow();
-        if (this.state.notion.status !== 'ok' && this.secrets.hasToken()) this.checkNotion().catch(() => {});
+        if (this.state.notion.accounts.some((a) => a.status !== 'ok')) this.checkNotion().catch(() => {});
         const a = this.state.association;
         if (a) await this._loadPage(a.pageId, { preferNetwork: true });
     }
@@ -232,76 +300,121 @@ class Controller extends Emitter {
     async onWindowFocus() {
         const a = this.state.association;
         const p = this.state.page;
-        if (!a || p.refreshing || p.status !== 'ready' || !this.secrets.hasToken()) return;
+        const accountId = this._activeAccount();
+        if (!a || p.refreshing || p.status !== 'ready' || !accountId || !this.secrets.has(accountId)) return;
         if (Date.now() - this.lastCheck < C.FOCUS_RECHECK_MS) return;
         this.lastCheck = Date.now();
         try {
-            const meta = await retrievePage(this.client, a.pageId);
+            const meta = await retrievePage(this._client(accountId), a.pageId);
             if (this.state.association !== a) return;
             if (this.state.page.fromCache || meta.lastEditedTime !== this.lastEditedTime) {
                 this.log.info('Page changed in Notion, reloading');
                 this._loadPage(a.pageId, { preferNetwork: true });
             }
         } catch (e) {
-            this._noteNotionError(e);
+            this._noteNotionError(e, accountId);
         }
     }
 
-    async checkNotion(token) {
-        const res = await this.testToken(token);
-        this._set({ notion: { status: 'ok', user: res } });
-        return res;
+    /** Checks one account (or all of them) and records their status. Throws the error when checking one. */
+    async checkNotion(accountId) {
+        const ids = accountId ? [accountId] : this.accounts.list('notion').map((x) => x.id);
+        const results = await Promise.all(ids.map(async (id) => {
+            try {
+                if (!this.secrets.has(id)) throw new NotionError('no_token');
+                const user = await this._testToken(this.secrets.get(id));
+                this.accounts.update(id, { name: user.name, workspace: user.workspace, ...(user.externalId ? { externalId: user.externalId } : {}) });
+                this.accountStatus.set(id, 'ok');
+                return { id, user };
+            } catch (e) {
+                this._noteNotionError(e, id);
+                return { id, error: e };
+            }
+        }));
+        this._refreshNotion();
+        if (accountId && results[0].error) throw results[0].error;
+        return accountId ? results[0].user : results.map((r) => ({ id: r.id, ok: !r.error }));
     }
 
     // Validates a token by calling GET /v1/users/me, falling back to a 1-result search.
-    async testToken(token) {
+    async _testToken(token) {
+        const client = this._client(null);
         try {
-            const me = await this.client.request('GET', '/users/me', { token });
+            const me = await client.request('GET', '/users/me', { token });
             const name = me && (me.name || (me.bot && me.bot.workspace_name)) || null;
             const workspace = me && me.bot && me.bot.workspace_name ? me.bot.workspace_name : null;
-            return { name, workspace };
+            return { name, workspace, externalId: me && typeof me.id === 'string' ? me.id : null };
         } catch (e) {
             if (e.code === 'restricted' || e.code === 'validation' || e.code === 'not_found') {
-                await this.client.request('POST', '/search', { token, body: { page_size: 1, filter: { property: 'object', value: 'page' } } });
-                return { name: null, workspace: null };
+                await client.request('POST', '/search', { token, body: { page_size: 1, filter: { property: 'object', value: 'page' } } });
+                return { name: null, workspace: null, externalId: null };
             }
-            // A candidate token (not saved yet) must not change the stored token's status.
-            if (!token) this._noteNotionError(e);
             throw e;
         }
     }
 
-    async saveToken(token) {
+    /**
+     * Saves a token. With accountId: replaces that account's token. Without: adds an account,
+     * or updates the existing account of the same integration (same bot id).
+     */
+    async saveToken(token, accountId) {
         let user;
         try {
-            user = await this.testToken(token);
+            user = await this._testToken(token);
         } catch (e) {
             if (e.code === 'unauthorized') throw new NotionError('token_rejected', { status: e.status });
             throw e;
         }
-        await this.secrets.setToken(token);
-        this._set({ notion: { status: 'ok', user } });
-        this.log.info('Notion token saved');
+        let account = accountId ? this.accounts.get(accountId) : this.accounts.findByExternalId('notion', user.externalId);
+        if (accountId && !account) throw new NotionError('account_missing');
+        if (account) {
+            await this.secrets.set(account.id, token);
+            this.accounts.update(account.id, { name: user.name, workspace: user.workspace, externalId: user.externalId });
+        } else {
+            if (!this.secrets.encryptionAvailable) throw Object.assign(new Error('OS secure storage unavailable'), { code: 'encryption_unavailable' });
+            account = this.accounts.add({ kind: 'notion', name: user.name, workspace: user.workspace, externalId: user.externalId });
+            try {
+                await this.secrets.set(account.id, token);
+            } catch (e) {
+                this.accounts.remove(account.id);
+                throw e;
+            }
+        }
+        this.clients.delete(account.id);
+        this.accountStatus.set(account.id, 'ok');
+        this._refreshNotion();
+        this.log.info(`Notion token saved (account ${account.id})`);
         const a = this.state.association;
-        if (a) this._loadPage(a.pageId, { preferNetwork: true });
-        return user;
+        if (a && this._activeAccount() === account.id) this._loadPage(a.pageId, { preferNetwork: true });
+        return { id: account.id, name: user.name, workspace: user.workspace };
     }
 
-    async clearToken() {
-        await this.secrets.clearToken();
-        this._set({ notion: { status: 'unconfigured', user: null } });
-        this.log.info('Notion token removed');
+    async clearToken(accountId) {
+        const id = accountId || this.accounts.defaultId('notion');
+        if (!id) return false;
+        await this.secrets.clear(id);
+        this.accounts.remove(id);
+        this.accountStatus.delete(id);
+        this.clients.delete(id);
+        this._refreshNotion();
+        this.log.info(`Notion account ${id} removed`);
+        return true;
     }
 
-    async search(query, cursor) {
-        return searchPages(this.client, { query, cursor });
+    async search(query, cursor, accountId) {
+        const id = this._accountId(accountId);
+        this._requireToken(id);
+        return searchPages(this._client(id), { query, cursor });
     }
 
-    async parentTitles(refs) {
+    async parentTitles(refs, accountId) {
         if (this.parentMemo.size > 1000) this.parentMemo.clear();
+        const id = this._accountId(accountId);
         const out = {};
         await Promise.all(refs.map(async (ref) => {
-            out[`${ref.type}:${ref.id}`] = await parentTitle(this.client, ref, this.parentMemo);
+            const memoKey = `${id}:${ref.type}:${ref.id}`;
+            if (!this.parentMemo.has(memoKey)) this.parentMemo.set(memoKey, await parentTitle(this._client(id), ref, new Map()));
+            out[`${ref.type}:${ref.id}`] = this.parentMemo.get(memoKey);
         }));
         return out;
     }
@@ -322,6 +435,7 @@ class Controller extends Emitter {
 
     _showActive() {
         this._syncAssociation();
+        this._refreshNotion();
         const a = this.state.association;
         if (!a) return this._applyAssociation();
         if (this.content && this.content.page && this.content.page.id === a.pageId) return undefined;
@@ -330,16 +444,23 @@ class Controller extends Emitter {
         return this._loadPage(a.pageId);
     }
 
+    // Fetches a page with the given account; returns it with the account to store.
+    async _fetchPage(pageId, accountId) {
+        const account = this._accountId(accountId);
+        this._requireToken(account);
+        return { page: await retrievePage(this._client(account), pageId), account };
+    }
+
     /** No association yet: creates it. Otherwise: replaces the page of the active tab. */
-    async associate(pageId) {
+    async associate(pageId, accountId) {
         if (!this.identity) throw Object.assign(new Error('no project'), { code: 'no_project' });
-        const page = await retrievePage(this.client, pageId);
+        const { page, account } = await this._fetchPage(pageId, accountId);
         const a = this.state.association;
         if (a && this.associations.get(a.key)) {
-            this.associations.replacePage(a.key, page);
+            this.associations.replacePage(a.key, page, { account });
             this.log.info(`"${this.identity.name}": tab replaced by page ${page.id}`);
         } else {
-            const record = this.associations.set(this.identity, page);
+            const record = this.associations.set(this.identity, page, { account });
             this.log.info(`Associated "${this.identity.name}" -> page ${page.id}`);
             this._set({ association: publicAssociation(record, 'new'), suggestion: null });
         }
@@ -348,12 +469,12 @@ class Controller extends Emitter {
     }
 
     /** Adds a page as a new tab of the current project and shows it. */
-    async addPage(pageId) {
+    async addPage(pageId, accountId) {
         const a = this._requireAssociation();
         const record = this.associations.get(a.key);
         if (record && record.pages.length >= C.MAX_PAGES_PER_PROJECT) throw Object.assign(new Error('too many pages'), { code: 'too_many_pages' });
-        const page = await retrievePage(this.client, pageId);
-        this.associations.addPage(a.key, page);
+        const { page, account } = await this._fetchPage(pageId, accountId);
+        this.associations.addPage(a.key, page, { account });
         this.log.info(`"${a.key}": page ${page.id} added as a tab`);
         this._showActive();
         return this.state.association;
@@ -375,10 +496,10 @@ class Controller extends Emitter {
     }
 
     /** Associations view: adds a page to any association (current project or not). */
-    async associateForKey(key, pageId) {
-        if (this.state.association && key === this.state.association.key) return this.addPage(pageId);
-        const page = await retrievePage(this.client, pageId);
-        const record = this.associations.addPage(key, page);
+    async associateForKey(key, pageId, accountId) {
+        if (this.state.association && key === this.state.association.key) return this.addPage(pageId, accountId);
+        const { page, account } = await this._fetchPage(pageId, accountId);
+        const record = this.associations.addPage(key, page, { account });
         this._set({});
         return publicAssociation(record);
     }
@@ -396,10 +517,11 @@ class Controller extends Emitter {
         const src = this.associations.get(s.key);
         if (!src) return null;
         const [first, ...rest] = src.pages;
-        const record = this.associations.set(this.identity, first);
-        for (const p of rest) this.associations.addPage(record.key, p);
+        const record = this.associations.set(this.identity, first, { account: first.account });
+        for (const p of rest) this.associations.addPage(record.key, p, { account: p.account });
         this.associations.setActivePage(record.key, src.activePage);
         this._set({ association: publicAssociation(this.associations.get(record.key), 'new'), suggestion: null });
+        this._refreshNotion();
         this._loadPage(this.state.association.pageId);
         return this.state.association;
     }
@@ -452,7 +574,7 @@ class Controller extends Emitter {
     }
 
     _writeError(e) {
-        this._noteNotionError(e);
+        this._noteNotionError(e, this._activeAccount());
         if (e && e.code === 'restricted') return new NotionError('write_denied');
         if (e && e.code === 'validation') return new NotionError('write_rejected');
         return e;
@@ -495,7 +617,7 @@ class Controller extends Emitter {
             apply: () => { node.checked = checked; },
             rollback: () => { node.checked = before; },
             send: async () => this._applyServerBlock(node,
-                await this.client.request('PATCH', `/blocks/${blockId}`, { body: edit.todoPatch(checked) })),
+                await this._client(this._activeAccount()).request('PATCH', `/blocks/${blockId}`, { body: edit.todoPatch(checked) })),
         });
         return { checked: node.checked };
     }
@@ -510,7 +632,7 @@ class Controller extends Emitter {
             apply: () => { node.rich = rich; },
             rollback: () => { node.rich = before; },
             send: async () => this._applyServerBlock(node,
-                await this.client.request('PATCH', `/blocks/${blockId}`, { body })),
+                await this._client(this._activeAccount()).request('PATCH', `/blocks/${blockId}`, { body })),
         });
         return { unchanged: false };
     }
@@ -522,7 +644,7 @@ class Controller extends Emitter {
             apply: () => { list.splice(index, 1); },
             rollback: () => { if (list[index] !== node) list.splice(Math.min(index, list.length), 0, node); },
             // DELETE moves the block to Notion's trash (it can be restored from Notion).
-            send: () => this.client.request('DELETE', `/blocks/${blockId}`),
+            send: () => this._client(this._activeAccount()).request('DELETE', `/blocks/${blockId}`),
         });
         return true;
     }
