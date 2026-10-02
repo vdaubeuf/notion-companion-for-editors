@@ -12,3 +12,48 @@ body { font-size: 12px; }
 /* Text glyph icons (see core/ui/icons.js). */
 .icon.glyph { font-size: 13px; }
 .icon-btn { width: 24px; height: 24px; }
+
+/* ---------- spacing without `gap` ----------
+   Premiere's UXP renderer ignores `gap` in flex layouts (icons stuck to their text,
+   checked in Premiere on macOS and Windows): the same spacing is rebuilt with margins.
+   Every rule mirrors a `gap` of core/ui/styles.css. */
+
+/* Icon followed by a bare text node: space after the icon. */
+.btn > .icon, .btn > .mini-spinner { margin-right: 6px; }
+body.narrow .page-bar .btn > .icon, .page-bar.with-tabs .btn > .icon { margin-right: 0; } /* label hidden */
+.menu-item > .icon { margin-right: 8px; }
+.status-item > .icon, .status-item > .mini-spinner { margin-right: 5px; }
+.loading-more > .mini-spinner, .results-loading > .mini-spinner { margin-right: 7px; }
+
+/* Rows: space before every item but the first. */
+.card-link > * + *, .n-subpage > * + *,
+.media-missing > * + *, .unsupported > * + *, .edit-bar > * + *, .todo-row > * + *, .hdr-title > * + *,
+.search-box > * + *, .banner-text > * + *, .set-row > * + * { margin-left: 7px; }
+.hdr > * + *, .page-bar > * + *, .n-title > * + *, .search-account > * + *, .set-check > * + * { margin-left: 8px; }
+.result > * + *, .n-callout > * + * { margin-left: 9px; }
+.page-bar-title > * + *, .view-head > * + *, .assoc-project > * + *, .banner-actions > * + *, .set-actions > * + * { margin-left: 6px; }
+.tab > * + *, .assoc-page > * + * { margin-left: 5px; }
+.toggle-summary > * + *, .assoc-actions > * + * { margin-left: 4px; }
+.hdr-actions > * + *, .page-bar-actions > * + *, .tabs > * + * { margin-left: 2px; }
+.page-status > * + * { margin-left: 10px; }
+.assoc > * + * { margin-left: 10px; }
+.hdr-meta .meta-item + .meta-item { margin-left: 6px; }
+.set-row > .select { margin-left: auto; } /* pushed to the right, as in core */
+.n-columns { margin-right: -20px; }
+.n-columns > * { margin: 0 20px 4px 0; }
+
+/* Columns: space above every item but the first. */
+.empty-state > * + * { margin-top: 8px; }
+.loading-page > * + * { margin-top: 10px; }
+.pending-children > * + * { margin-top: 5px; }
+.results-empty > * + * { margin-top: 4px; }
+body.narrow .assoc > * + * { margin-left: 0; margin-top: 6px; }
+
+/* Wrapping rows: the buttons that wrap need room below too. */
+.banner-actions > *, .set-actions > * { margin-bottom: 4px; }
+
+/* ---------- menus ----------
+   UXP does not size an absolutely positioned box to its content: the menu keeps its
+   min-width and long labels ran out of it. Fixed width, labels wrap if needed. */
+.menu { width: 250px; max-width: calc(100vw - 16px); }
+.menu-item { white-space: normal; }

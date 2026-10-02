@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0-beta.2
+
+Pré-release : correctifs d'affichage dans Premiere Pro, à la suite des essais de la 0.3.0-beta.1 (macOS et Windows). Rien ne change dans Resolve.
+
+- Premiere : icônes et pastille d'état de nouveau espacées du texte (en-tête, titre de la page, onglets, menus, boutons, réglages).
+- Premiere : les libellés du menu ••• restent dans le menu.
+
+**Installation** : comme pour la 0.3.0-beta.1. Seul le panneau Premiere change ; réinstaller le plugin Resolve n'est pas nécessaire.
+
 ## 0.3.0-beta.1
 
 Pré-release : nouveautés vérifiées par les tests automatiques, pas encore avec la vraie API Notion ni dans Resolve / Premiere. Points à tester : [docs/STATUS.md](docs/STATUS.md).
