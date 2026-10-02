@@ -11,7 +11,7 @@ Configuration de test : macOS, DaVinci Resolve Studio 21.1.0 (build 14), Premier
 ### Version 0.3.0-beta.1 — retours du 2 octobre 2026 (macOS et Windows)
 
 - **DaVinci Resolve**, macOS et Windows : rien à signaler (retour de l'utilisateur, sans le détail des fonctions essayées).
-- **Premiere Pro**, macOS et Windows : panneau ouvert, page affichée, menu ••• ouvert. Deux défauts d'affichage, corrigés dans la 0.3.0 (à revérifier dans Premiere) :
+- **Premiere Pro**, macOS et Windows : panneau ouvert, page affichée, menu ••• ouvert. Deux défauts d'affichage, corrigés dans la 0.3.0 (confirmé dans Premiere le 2 octobre) :
   - icônes collées au texte (pastille de l'en-tête, icône de la page, menu) et pastille décalée par rapport à « Notion connecté » : le moteur UXP de Premiere n'applique pas `gap` dans les mises en page flex. Les espacements sont refaits avec des marges dans `hosts/premiere/premiere.css` ;
   - texte « Ajouter une page (onglet 2/4) » qui sort du menu : UXP ne dimensionne pas le menu (positionné en absolu) selon son contenu. Largeur fixe, libellés renvoyés à la ligne si besoin.
 
@@ -112,7 +112,9 @@ Au moment de la publication, les journaux ne montraient encore ni recherche ni a
 ## Prochaines étapes prévues
 
 - **UI / UX** : passe de design à faire ensemble (voir les points ci-dessus).
-- **Tests réels** de la 0.3.0 : liste « À tester » ci-dessus et affichage Premiere (publiée sans ces essais, à la demande de l'utilisateur).
+- **Installation macOS sans autorisation dans les réglages du système** (demande du 2 octobre). Aujourd'hui, macOS bloque les fichiers `.command` téléchargés (clic droit → Ouvrir, ou autorisation dans Réglages Système). Piste à vérifier : un installeur `.pkg` signé avec un certificat Developer ID d'Apple et notarisé (compte Apple Developer payant). Je ne sais pas encore si cela suffit pour un plugin Resolve, ni ce que cela change pour le `.ccx` Premiere.
+- **Mise à jour sans désinstaller** (demande du 2 octobre). Resolve : l'installeur remplace déjà le dossier du plugin. Premiere : passer de la 0.3.0-beta.1 à la 0.3.0 a demandé de désinstaller d'abord ; les deux portaient le même numéro interne (0.3.0), cause probable mais non vérifiée. Pistes : un numéro de manifeste toujours plus grand à chaque publication (pré-releases comprises), et un installeur qui retire l'ancienne version avant d'installer la nouvelle si l'installeur Adobe le permet.
+- **Tests réels** de la 0.3.0 : liste « À tester » ci-dessus. Affichage Premiere corrigé : confirmé par l'utilisateur le 2 octobre.
 - Ajout de blocs depuis le panneau (nouvelle ligne, nouvelle to-do).
 
 ## Évolutions envisagées
