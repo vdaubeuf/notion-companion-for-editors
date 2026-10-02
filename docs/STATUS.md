@@ -1,12 +1,19 @@
 # État du projet
 
-*Mis à jour le 1er octobre 2026 — version 0.3.0-beta.1 (pré-release : édition, onglets, plusieurs comptes).*
+*Mis à jour le 2 octobre 2026 — version 0.3.0-beta.2 (pré-release : édition, onglets, plusieurs comptes ; correctifs d'affichage Premiere).*
 
 Ce document sépare ce qui a été **vérifié en conditions réelles**, ce qui ne l'a été **que par des tests automatiques**, et ce qui **reste à tester**. Il sert aussi de liste des points à revoir ensemble (interface, comportements).
 
 ## Vérifié en conditions réelles
 
 Configuration de test : macOS, DaVinci Resolve Studio 21.1.0 (build 14), Premiere Pro 26.5.1.
+
+### Version 0.3.0-beta.1 — retours du 2 octobre 2026 (macOS et Windows)
+
+- **DaVinci Resolve**, macOS et Windows : rien à signaler (retour de l'utilisateur, sans le détail des fonctions essayées).
+- **Premiere Pro**, macOS et Windows : panneau ouvert, page affichée, menu ••• ouvert. Deux défauts d'affichage, corrigés dans la 0.3.0-beta.2 (à revérifier dans Premiere) :
+  - icônes collées au texte (pastille de l'en-tête, icône de la page, menu) et pastille décalée par rapport à « Notion connecté » : le moteur UXP de Premiere n'applique pas `gap` dans les mises en page flex. Les espacements sont refaits avec des marges dans `hosts/premiere/premiere.css` ;
+  - texte « Ajouter une page (onglet 2/4) » qui sort du menu : UXP ne dimensionne pas le menu (positionné en absolu) selon son contenu. Largeur fixe, libellés renvoyés à la ligne si besoin.
 
 ### DaVinci Resolve — version 0.1.0
 
@@ -105,7 +112,7 @@ Au moment de la publication, les journaux ne montraient encore ni recherche ni a
 ## Prochaines étapes prévues
 
 - **UI / UX** : passe de design à faire ensemble (voir les points ci-dessus).
-- **Tests réels** de la 0.3.0-beta.1 (liste ci-dessus), puis publication de la 0.3.0.
+- **Tests réels** de la 0.3.0-beta.2 (liste ci-dessus, et affichage Premiere), puis publication de la 0.3.0.
 - Ajout de blocs depuis le panneau (nouvelle ligne, nouvelle to-do).
 
 ## Évolutions envisagées
