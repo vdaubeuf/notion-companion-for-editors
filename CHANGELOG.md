@@ -1,25 +1,17 @@
 # Changelog
 
-## 0.3.0-beta.2
+## 0.3.0
 
-Pré-release : correctifs d'affichage dans Premiere Pro, à la suite des essais de la 0.3.0-beta.1 (macOS et Windows). Rien ne change dans Resolve.
-
-- Premiere : icônes et pastille d'état de nouveau espacées du texte (en-tête, titre de la page, onglets, menus, boutons, réglages).
-- Premiere : les libellés du menu ••• restent dans le menu.
-
-**Installation** : comme pour la 0.3.0-beta.1. Seul le panneau Premiere change ; réinstaller le plugin Resolve n'est pas nécessaire.
-
-## 0.3.0-beta.1
-
-Pré-release : nouveautés vérifiées par les tests automatiques, pas encore avec la vraie API Notion ni dans Resolve / Premiere. Points à tester : [docs/STATUS.md](docs/STATUS.md).
+Points encore à vérifier et prochaines étapes : [docs/STATUS.md](docs/STATUS.md).
 
 - **Modifier la page depuis le panneau** : cocher / décocher les to-do ; en mode édition (crayon), modifier le texte d'un bloc et supprimer des blocs (corbeille Notion, avec confirmation). La mise en forme hors du passage modifié est conservée. En cas de refus de Notion, la modification est annulée à l'écran.
 - **1 à 4 pages par projet**, affichées en onglets ; l'onglet actif est mémorisé par projet.
 - **Plusieurs comptes Notion** (un token par workspace) ; chaque page retient son compte. Le token de la v0.2 devient le compte par défaut, sans rien ressaisir.
+- Premiere : icônes et pastille d'état espacées du texte, libellés du menu ••• dans le menu (défauts de la 0.3.0-beta.1).
 - Flèches des titres dépliables alignées sur le texte du titre.
 - Associations migrées automatiquement au format v3.
 
-**Installation** : comme pour la 0.2.0 (archive de votre système, puis « Installer pour DaVinci Resolve » et/ou « Installer pour Premiere Pro », voir le README). Les associations et le token de la 0.2 sont repris tels quels.
+**Installation** : téléchargez l'archive de votre système, décompressez-la, puis lancez « Installer pour DaVinci Resolve » et/ou « Installer pour Premiere Pro » (voir le README). Les associations et le token de la 0.2 sont repris tels quels. Premiere : si la 0.3.0-beta.1 est installée et que Creative Cloud indique que la version est déjà installée, lancez d'abord « Desinstaller de Premiere Pro ».
 
 ## 0.2.0
 
